@@ -99,6 +99,13 @@ export const MarketDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, [syncMarketData]);
 
+  // ── Wire global FAB → open AddAssetModal ─────────────────
+  useEffect(() => {
+    const open = () => setShowAddAsset(true);
+    window.addEventListener('ow:open-asset-modal', open);
+    return () => window.removeEventListener('ow:open-asset-modal', open);
+  }, []);
+
   const handleSync = useCallback(() => {
     if (!isSyncing) syncMarketData();
   }, [isSyncing, syncMarketData]);
@@ -426,14 +433,6 @@ export const MarketDashboard: React.FC = () => {
         {/* ── Bottom padding ────────────────────────────────── */}
         <div className="h-20" />
       </div>
-
-      {/* ── Floating Action Button ────────────────────────────── */}
-      <button
-        onClick={() => setShowAddAsset(true)}
-        className="fixed bottom-8 right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 flex items-center justify-center shadow-2xl shadow-indigo-500/40 transition-all hover:scale-110 active:scale-95 z-30"
-      >
-        <Plus size={22} className="text-white" />
-      </button>
 
       {/* ── Modals ─────────────────────────────────────────────── */}
       {showAddAsset && (

@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import {
   Shield, BarChart2,
-  LayoutDashboard, Wallet, TrendingUp, Brain, Settings, Plus, X,
+  LayoutDashboard, Wallet, TrendingUp, Brain, Settings, Plus, X, Landmark, Activity,
 } from 'lucide-react';
 import { FiatDashboard }      from './components/FiatDashboard';
 import { MarketDashboard }    from './components/MarketDashboard';
@@ -177,16 +177,14 @@ function AppShell() {
     activeTab === 'insights'  ? 'Insight Keuangan' :
     'Settings';
 
-  // ── FAB nav target per active tab ─────────────────────────────
+  // ── FAB handle toggles menu ──────────────────────────────────
   const handleFab = () => {
-    // On fiat tab — FAB opens transaction modal via custom event
-    if (activeTab === 'fiat') {
-      window.dispatchEvent(new CustomEvent('ow:open-tx-modal'));
-    } else if (activeTab === 'market') {
-      window.dispatchEvent(new CustomEvent('ow:open-asset-modal'));
-    } else {
-      setIsFabOpen((v) => !v);
-    }
+    setIsFabOpen((v) => !v);
+  };
+
+  const dispatchAction = (event: string) => {
+    window.dispatchEvent(new CustomEvent(event));
+    setIsFabOpen(false);
   };
 
   return (
@@ -254,7 +252,51 @@ function AppShell() {
           </div>
         </main>
 
-        {/* ── Floating Action Button (relocated out of BottomNav) ── */}
+        {/* ── Global Action Menu (Triggered by FAB) ──────────── */}
+        {isFabOpen && (
+          <>
+            {/* Backdrop to close menu */}
+            <div 
+              className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm transition-opacity"
+              onClick={() => setIsFabOpen(false)}
+            />
+            
+            {/* Action Menu Items */}
+            <div className="fixed right-6 bottom-40 md:bottom-28 z-50 flex flex-col gap-3 items-end animate-in slide-in-from-bottom-5 fade-in duration-200">
+              <button
+                onClick={() => dispatchAction('ow:open-tx-modal')}
+                className="flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl shadow-xl transition-all w-max"
+              >
+                <span className="text-sm font-semibold text-white">Log Transaction</span>
+                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                  <Activity size={16} className="text-indigo-400" />
+                </div>
+              </button>
+              
+              <button
+                onClick={() => dispatchAction('ow:open-bank-modal')}
+                className="flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl shadow-xl transition-all w-max"
+              >
+                <span className="text-sm font-semibold text-white">Add Bank Account</span>
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <Landmark size={16} className="text-emerald-400" />
+                </div>
+              </button>
+
+              <button
+                onClick={() => dispatchAction('ow:open-asset-modal')}
+                className="flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl shadow-xl transition-all w-max"
+              >
+                <span className="text-sm font-semibold text-white">Add Investment</span>
+                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <TrendingUp size={16} className="text-purple-400" />
+                </div>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Floating Action Button (Universal Toggler) ───────── */}
         <button
           id="global-fab"
           onClick={handleFab}
