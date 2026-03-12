@@ -21,7 +21,6 @@ select option {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Input autofill override ── */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
@@ -29,3 +28,20 @@ input:-webkit-autofill:focus {
   -webkit-text-fill-color: white;
   caret-color: white;
 }
+
+/* ── iOS Anti-Zoom: force min 16px on all form controls ───── */
+/* iOS Safari auto-zooms when input font-size < 16px.          */
+/* This rule prevents zoom without changing visual appearance.  */
+input,
+select,
+textarea {
+  font-size: max(16px, 1rem);
+}
+
+/* ── PWA Standalone: prevent overscroll bounce ──────────────── */
+/* Applied via JS when running in standalone mode               */
+body.pwa-standalone {
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+

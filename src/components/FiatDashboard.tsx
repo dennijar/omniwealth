@@ -3,7 +3,7 @@
 // Full-featured Bank, Transaction, and Budget Dashboard
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Wallet, ArrowUpRight,
   ArrowDownLeft, ArrowLeftRight, ChevronLeft, ChevronRight,
@@ -28,6 +28,19 @@ export const FiatDashboard: React.FC = () => {
   const [showAddBank, setShowAddBank] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthYear());
   const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+
+  // Wire global FAB → open transaction modal
+  useEffect(() => {
+    const openTx   = () => setShowTxModal(true);
+    const openBank = () => setShowAddBank(true);
+    window.addEventListener('ow:open-tx-modal',   openTx);
+    window.addEventListener('ow:open-bank-modal', openBank);
+    return () => {
+      window.removeEventListener('ow:open-tx-modal',   openTx);
+      window.removeEventListener('ow:open-bank-modal', openBank);
+    };
+  }, []);
+
 
   const totalBalance = getTotalFiatBalance();
   const recentTx = getRecentTransactions(8);
@@ -54,21 +67,6 @@ export const FiatDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#060D1F] text-white">
-      {/* ── Sub-header bar ─────────────────────────────────── */}
-      <div className="bg-[#060D1F] border-b border-white/5 px-6 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wallet size={14} className="text-indigo-400" />
-            <p className="text-white/40 text-xs font-medium">Fiat Ledger — Bank Accounts & Budgeting</p>
-          </div>
-          <button
-            onClick={() => setShowTxModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-semibold transition-all shadow-lg shadow-indigo-500/25"
-          >
-            <Plus size={16} /> Log Transaction
-          </button>
-        </div>
-      </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 

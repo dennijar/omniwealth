@@ -79,7 +79,17 @@ export const useAppStore = create<AppState>()(
 
       // ── setDarkMode ─────────────────────────────────────────
       setDarkMode: (enabled: boolean) => {
-        document.documentElement.classList.toggle('dark', enabled);
+        try {
+          if (enabled) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+          localStorage.setItem('ow-theme', enabled ? 'dark' : 'light');
+          console.log(`[Theme] setDarkMode → ${enabled ? 'dark' : 'light'}`);
+        } catch (e) {
+          console.error('[Theme] Failed to apply theme:', e);
+        }
         set({ darkMode: enabled });
       },
 

@@ -1,18 +1,18 @@
 // ============================================================
-// OmniWealth – BottomNav.tsx  v2.0
-// Native-feel PWA bottom navigation — 5 tabs:
-//   Home · Fiat · [+ FAB] · Insights · Settings
-// Now uses AppTab from useAppStore (includes 'settings').
+// OmniWealth – BottomNav.tsx  v3.0
+// Normalized: 5 even tabs, no artificial FAB gap.
+// FAB has been relocated to App.tsx as a floating button.
+// Hidden on desktop (≥md) — replaced by the sidebar.
 // ============================================================
 
 import React from 'react';
 import {
-  LayoutDashboard, Wallet, Plus,
+  LayoutDashboard, Wallet,
   TrendingUp, Brain, Settings,
 } from 'lucide-react';
 import type { AppTab } from '../store/useAppStore';
 
-// ── Types ─────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────
 interface NavItem {
   key:   AppTab;
   label: string;
@@ -26,78 +26,48 @@ interface BottomNavProps {
   gradeColorCls?: string;
 }
 
-// ── Component ─────────────────────────────────────────────────
+// ── All 5 tabs — evenly spaced ──────────────────────────────────
+const ALL_TABS: NavItem[] = [
+  { key: 'overview',  label: 'Home',     icon: <LayoutDashboard size={20} /> },
+  { key: 'fiat',      label: 'Fiat',     icon: <Wallet size={20} />          },
+  { key: 'market',    label: 'Invest',   icon: <TrendingUp size={20} />      },
+  { key: 'insights',  label: 'Insights', icon: <Brain size={20} />           },
+  { key: 'settings',  label: 'Settings', icon: <Settings size={20} />        },
+];
+
+// ── Component ──────────────────────────────────────────────────
 export function BottomNav({
   activeTab,
   onTabChange,
   insightGrade,
   gradeColorCls = 'text-rose-400',
 }: BottomNavProps) {
-
-  const leftTabs: NavItem[] = [
-    { key: 'overview', label: 'Home',    icon: <LayoutDashboard size={20} /> },
-    { key: 'fiat',     label: 'Fiat',    icon: <Wallet size={20} /> },
-  ];
-
-  const rightTabs: NavItem[] = [
-    { key: 'market',   label: 'Invest',    icon: <TrendingUp size={20} /> },
-    { key: 'insights', label: 'Insights',  icon: <Brain size={20} /> },
-    { key: 'settings', label: 'Settings',  icon: <Settings size={20} /> },
-  ];
-
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 bg-[#060D1F]/95 backdrop-blur-2xl border-t border-white/[0.07]"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#060D1F]/95 backdrop-blur-2xl border-t border-white/[0.07]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <div className="mx-auto max-w-md px-2">
-        <div className="flex items-end justify-around h-16 relative">
-
-          {/* ── Left tabs ──────────────────────────────────── */}
-          {leftTabs.map((tab) => (
-            <NavButton
-              key={tab.key}
-              tab={tab}
-              isActive={activeTab === tab.key}
-              onPress={() => onTabChange(tab.key)}
-            />
-          ))}
-
-          {/* ── Center FAB (+) ─────────────────────────────── */}
-          <div className="flex flex-col items-center pb-1 relative -top-3">
-            <button
-              onClick={() => onTabChange('overview')}
-              aria-label="Add transaction"
-              className="relative w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-xl shadow-indigo-500/40 active:scale-95 transition-transform duration-150 ring-4 ring-[#060D1F]"
-            >
-              <Plus size={26} strokeWidth={2.5} className="text-white" />
-            </button>
-            <span className="text-[9px] mt-1 text-white/25 font-medium">Add</span>
-          </div>
-
-          {/* ── Right tabs ─────────────────────────────────── */}
-          {rightTabs.map((tab) => (
-            <NavButton
-              key={tab.key}
-              tab={tab}
-              isActive={activeTab === tab.key}
-              onPress={() => onTabChange(tab.key)}
-              badge={
-                tab.key === 'insights' && insightGrade && insightGrade !== '–'
-                  ? insightGrade
-                  : undefined
-              }
-              badgeColorCls={gradeColorCls}
-            />
-          ))}
-
-        </div>
+      <div className="flex justify-around items-center w-full h-16 px-2">
+        {ALL_TABS.map((tab) => (
+          <NavButton
+            key={tab.key}
+            tab={tab}
+            isActive={activeTab === tab.key}
+            onPress={() => onTabChange(tab.key)}
+            badge={
+              tab.key === 'insights' && insightGrade && insightGrade !== '–'
+                ? insightGrade
+                : undefined
+            }
+            badgeColorCls={gradeColorCls}
+          />
+        ))}
       </div>
     </nav>
   );
 }
 
-// ── NavButton sub-component ───────────────────────────────────
+// ── NavButton sub-component ────────────────────────────────────
 interface NavButtonProps {
   tab:            NavItem;
   isActive:       boolean;
@@ -111,7 +81,7 @@ function NavButton({ tab, isActive, onPress, badge, badgeColorCls = 'text-rose-4
     <button
       onClick={onPress}
       aria-current={isActive ? 'page' : undefined}
-      className="relative flex flex-col items-center justify-end gap-1 h-full w-12 pb-2 transition-all duration-200 active:scale-95"
+      className="relative flex flex-col items-center justify-center gap-1 h-full flex-1 transition-all duration-200 active:scale-95"
     >
       {/* Active pill indicator */}
       <span
@@ -136,7 +106,7 @@ function NavButton({ tab, isActive, onPress, badge, badgeColorCls = 'text-rose-4
 
       {/* Badge */}
       {badge && (
-        <span className={`absolute top-1.5 right-0 text-[8px] font-black leading-none px-1 py-0.5 rounded-full bg-[#060D1F] border border-white/10 ${badgeColorCls}`}>
+        <span className={`absolute top-1 right-2 text-[8px] font-black leading-none px-1 py-0.5 rounded-full bg-[#060D1F] border border-white/10 ${badgeColorCls}`}>
           {badge}
         </span>
       )}

@@ -24,6 +24,20 @@
       html { background: #060D1F; }
       body { margin: 0; }
     </style>
+    <!-- Bulletproof theme: apply dark class before React mounts (no FOUC) -->
+    <script>
+      try {
+        var s = JSON.parse(localStorage.getItem('omniwealth-app-store') || '{}');
+        var dark = s?.state?.darkMode;
+        if (dark === true) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (e) {
+        document.documentElement.classList.add('dark'); // safe default
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
