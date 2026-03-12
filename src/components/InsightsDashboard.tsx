@@ -302,13 +302,13 @@ export function InsightsDashboard() {
                 grade={financialScore.grade}
                 gradeColor={financialScore.gradeColor}
               />
-              <p className="text-center text-[11px] text-white/25 mt-2">
-                {financialScore.grade === 'A+' ? 'Masterclass! 🏆' :
-                 financialScore.grade === 'A'  ? 'Excellent! 🌟'  :
-                 financialScore.grade === 'B'  ? 'Bagus! 👍'      :
-                 financialScore.grade === 'C'  ? 'Cukup ⚡'       :
-                 financialScore.grade === 'D'  ? 'Perlu Perbaikan ⚠️' : 'Butuh Perhatian 🚨'}
-              </p>
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-white/25 mt-2">
+                {financialScore.grade === 'A+' ? <><Trophy className="w-3 h-3 text-amber-400" /> Masterclass!</> :
+                 financialScore.grade === 'A'  ? <><Star className="w-3 h-3 text-amber-400" /> Excellent!</> :
+                 financialScore.grade === 'B'  ? <><CheckCircle className="w-3 h-3 text-blue-400" /> Bagus!</> :
+                 financialScore.grade === 'C'  ? <><Zap className="w-3 h-3 text-amber-500" /> Cukup</> :
+                 financialScore.grade === 'D'  ? <><AlertTriangle className="w-3 h-3 text-amber-500" /> Perlu Perbaikan</> : <><AlertTriangle className="w-3 h-3 text-rose-500" /> Butuh Perhatian</>}
+              </div>
             </div>
 
             {/* Breakdown bars */}
@@ -702,7 +702,7 @@ export function InsightsDashboard() {
         <Accordion
           title="Inflasi Gaya Hidup"
           icon={<TrendingUp size={14} />}
-          badge={lifestyleInflation.detected ? '⚠ Terdeteksi' : undefined}
+          badge={lifestyleInflation.detected ? 'Terdeteksi' : undefined}
           badgeColor="text-amber-400"
           defaultOpen={false}
         >

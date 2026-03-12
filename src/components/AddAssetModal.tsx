@@ -8,6 +8,7 @@ import { X, Plus } from 'lucide-react';
 import { useMarketStore } from '../store/useMarketStore';
 import type { AssetClass, CreateAssetPayload } from '../types/market';
 import { ASSET_CLASS_CONFIG } from '../store/useMarketStore';
+import { useAppStore } from '../store/useAppStore';
 
 interface Props {
   onClose: () => void;
@@ -30,6 +31,12 @@ const CRYPTO_EXAMPLES: Record<string, string> = {
 export const AddAssetModal: React.FC<Props> = ({ onClose, onAdded }) => {
   const addAsset       = useMarketStore((s) => s.addAsset);
   const syncMarketData = useMarketStore((s) => s.syncMarketData);
+  const setModalOpen   = useAppStore((s) => s.setModalOpen);
+
+  React.useEffect(() => {
+    setModalOpen(true);
+    return () => setModalOpen(false);
+  }, [setModalOpen]);
 
   const [form, setForm] = useState<{
     name: string;

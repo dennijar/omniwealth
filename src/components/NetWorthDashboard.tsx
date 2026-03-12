@@ -689,27 +689,29 @@ export const NetWorthDashboard: React.FC<{
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-6 mb-5">
+          <div className="flex flex-col items-center text-center sm:flex-row sm:text-left gap-6 mb-5">
             {/* Ring */}
-            <div className="relative flex-shrink-0">
-              <HealthRing score={healthScore} />
-              <div className="absolute inset-0 flex flex-col items-center justify-center rotate-90">
-                <span className="text-2xl font-black text-white">{healthScore}</span>
-                <span className="text-white/30 text-[10px]">/ 100</span>
+            <div className="flex justify-center items-center w-full sm:w-auto py-4">
+              <div className="relative flex-shrink-0">
+                <HealthRing score={healthScore} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center rotate-90 w-full h-full">
+                  <span className="text-2xl font-black text-white">{healthScore}</span>
+                  <span className="text-white/30 text-[10px]">/ 100</span>
+                </div>
               </div>
             </div>
 
             {/* Score label */}
-            <div>
+            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
               <p className={`text-xl font-black mb-1 ${
                 healthScore >= 80 ? 'text-emerald-400' :
                 healthScore >= 60 ? 'text-indigo-400' :
                 healthScore >= 40 ? 'text-amber-400' : 'text-rose-400'
               }`}>
-                {healthScore >= 80 ? '🏆 Excellent'
-                : healthScore >= 60 ? '✅ Good'
-                : healthScore >= 40 ? '⚠️ Fair'
-                : '🔴 Needs Attention'}
+                {healthScore >= 80 ? 'Excellent'
+                : healthScore >= 60 ? 'Good'
+                : healthScore >= 40 ? 'Fair'
+                : 'Needs Attention'}
               </p>
               <p className="text-white/35 text-sm max-w-sm">
                 {healthScore >= 80

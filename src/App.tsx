@@ -99,6 +99,7 @@ function AppShell() {
   const activeTab    = useAppStore((s) => s.activeTab) as Tab;
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const darkMode     = useAppStore((s) => s.darkMode);
+  const isModalOpen  = useAppStore((s) => s.isModalOpen);
 
   const getTotalFiatBalance     = useFiatStore((s) => s.getTotalFiatBalance);
   const getTotalInvestmentValue = useMarketStore((s) => s.getTotalInvestmentValue);
@@ -307,8 +308,10 @@ function AppShell() {
             id="global-fab"
             onClick={handleFab}
             aria-label="Add"
-            className={`fixed right-6 bottom-24 md:bottom-10 z-[9999] w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-2xl shadow-indigo-500/40 transition-all duration-200 hover:scale-110 active:scale-95 ${
-              isFabOpen ? 'rotate-45' : 'rotate-0'
+            className={`fixed right-6 md:bottom-10 z-[9999] w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-2xl shadow-indigo-500/40 transition-all duration-300 ${
+              isFabOpen ? 'rotate-45' : 'hover:scale-110 active:scale-95 text-white'
+            } ${
+              isModalOpen ? 'opacity-0 pointer-events-none translate-y-10 bottom-24' : 'opacity-100 translate-y-0 bottom-24'
             }`}
           >
             {isFabOpen

@@ -25,12 +25,14 @@ interface AppState {
   activeTab:        AppTab;
   darkMode:         boolean;
   currency:         CurrencySymbol;
+  isModalOpen:      boolean;
 
   // ── Actions ────────────────────────────────────────────────
   completeOnboarding: (data: OnboardingData) => void;
   setActiveTab:       (tab: AppTab)          => void;
   setDarkMode:        (enabled: boolean)     => void;
   setCurrency:        (symbol: CurrencySymbol) => void;
+  setModalOpen:       (isOpen: boolean)        => void;
   /** Download all store data as a JSON backup file */
   exportData:         () => void;
   /** Wipe localStorage and reload the page */
@@ -47,6 +49,7 @@ export const useAppStore = create<AppState>()(
       activeTab:        'overview',
       darkMode:         false,
       currency:         'Rp',
+      isModalOpen:      false,
 
       // ── completeOnboarding ──────────────────────────────────
       completeOnboarding: (data: OnboardingData) => {
@@ -57,7 +60,7 @@ export const useAppStore = create<AppState>()(
           initial_balance: data.initialBalance,
           currency:        'IDR',
           color:           '#6366F1',
-          icon:            data.bankName[0]?.toUpperCase() ?? '🏦',
+          icon:            data.bankName[0]?.toUpperCase() ?? '#',
         });
 
         if (data.monthlyIncome > 0) {
@@ -95,6 +98,9 @@ export const useAppStore = create<AppState>()(
 
       // ── setCurrency ─────────────────────────────────────────
       setCurrency: (symbol: CurrencySymbol) => set({ currency: symbol }),
+
+      // ── setModalOpen ────────────────────────────────────────
+      setModalOpen: (isOpen: boolean) => set({ isModalOpen: isOpen }),
 
       // ── exportData ──────────────────────────────────────────
       exportData: () => {

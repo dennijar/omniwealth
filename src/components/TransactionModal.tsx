@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { X, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
 import { useFiatStore, TRANSACTION_CATEGORIES } from '../store/useFiatStore';
 import { TransactionType } from '../types/fiat';
 import { format } from 'date-fns';
@@ -17,6 +18,12 @@ interface TransactionModalProps {
 export const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, defaultType = 'EXPENSE' }) => {
   const bankAccounts = useFiatStore((s) => s.bankAccounts);
   const addTransaction = useFiatStore((s) => s.addTransaction);
+  const setModalOpen = useAppStore((s) => s.setModalOpen);
+
+  React.useEffect(() => {
+    setModalOpen(true);
+    return () => setModalOpen(false);
+  }, [setModalOpen]);
 
   const [type, setType] = useState<TransactionType>(defaultType);
   const [bankId, setBankId] = useState(bankAccounts[0]?.id ?? '');
@@ -80,7 +87,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, def
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4 pb-8">
           {/* Transaction Type Toggle */}
           <div className="grid grid-cols-3 gap-2 p-1 bg-white/5 rounded-xl">
             {(['INCOME', 'EXPENSE', 'TRANSFER'] as TransactionType[]).map((t) => (
@@ -164,27 +171,27 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, def
             </select>
           </div>
 
-          {/* Date & Description */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-white/50 text-xs font-medium mb-1.5 uppercase tracking-wider">Date & Time</label>
-              <input
-                type="datetime-local"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-white/30 transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-white/50 text-xs font-medium mb-1.5 uppercase tracking-wider">Description</label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional note..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-              />
-            </div>
+          {/* Date */}
+          <div>
+            <label className="block text-white/50 text-xs font-medium mb-1.5 uppercase tracking-wider">Date & Time</label>
+            <input
+              type="datetime-local"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-white/30 transition-all"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-white/50 text-xs font-medium mb-1.5 uppercase tracking-wider">Description</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional note..."
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
+            />
           </div>
 
           {/* Feedback */}

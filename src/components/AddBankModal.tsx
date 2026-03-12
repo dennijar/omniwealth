@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { X, CheckCircle } from 'lucide-react';
 import { useFiatStore, BANK_OPTIONS } from '../store/useFiatStore';
+import { useAppStore } from '../store/useAppStore';
 import { Currency } from '../types/fiat';
 
 interface AddBankModalProps {
@@ -16,6 +17,12 @@ const CURRENCIES: Currency[] = ['IDR', 'USD', 'EUR', 'SGD', 'MYR'];
 
 export const AddBankModal: React.FC<AddBankModalProps> = ({ onClose }) => {
   const addBankAccount = useFiatStore((s) => s.addBankAccount);
+  const setModalOpen = useAppStore((s) => s.setModalOpen);
+
+  React.useEffect(() => {
+    setModalOpen(true);
+    return () => setModalOpen(false);
+  }, [setModalOpen]);
 
   const [selectedBank, setSelectedBank] = useState(BANK_OPTIONS[0]);
   const [accountNumber, setAccountNumber] = useState('');

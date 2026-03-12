@@ -35,7 +35,7 @@ const BANK_COLORS: string[] = [
 const BANK_ICONS: Record<string, string> = {
   BCA: 'B', Mandiri: 'M', BNI: 'N', BRI: 'R',
   CIMB: 'C', Jenius: 'J', GoPay: 'G', OVO: 'O',
-  Cash: '💵', Other: '🏦',
+  Cash: '$', Other: '#',
 };
 
 // No seed data — app starts with a clean slate.
@@ -82,7 +82,7 @@ export const useFiatStore = create<FiatState>()(
           initial_balance: new Decimal(payload.initial_balance).toFixed(2),
           currency: payload.currency,
           color: payload.color || BANK_COLORS[colorIndex],
-          icon: payload.icon || BANK_ICONS[payload.bank_name] || '🏦',
+          icon: payload.icon || BANK_ICONS[payload.bank_name] || '#',
           created_at: new Date().toISOString(),
         };
         set((state) => ({ bankAccounts: [...state.bankAccounts, newAccount] }));
@@ -310,6 +310,6 @@ export const BANK_OPTIONS = [
   { name: 'Jenius', icon: 'J', color: '#00B9C9' },
   { name: 'GoPay', icon: 'G', color: '#00AAD4' },
   { name: 'OVO', icon: 'O', color: '#4B3F9E' },
-  { name: 'Cash', icon: '💵', color: '#10B981' },
-  { name: 'Other', icon: '🏦', color: '#6B7280' },
+  { name: 'Cash', icon: '$', color: '#10B981' },
+  { name: 'Other', icon: '#', color: '#6B7280' },
 ];
