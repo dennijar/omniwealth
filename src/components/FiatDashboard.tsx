@@ -7,10 +7,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, TrendingUp, TrendingDown, Wallet, ArrowUpRight,
   ArrowDownLeft, ArrowLeftRight, ChevronLeft, ChevronRight,
-  BarChart3, Activity, RefreshCw
+  BarChart3, Activity, RefreshCw, Pencil, Trash2, Landmark, CreditCard,
 } from 'lucide-react';
 import { useFiatStore } from '../store/useFiatStore';
-import { BankCard } from './BankCard';
 import { TransactionModal } from './TransactionModal';
 import { AddBankModal } from './AddBankModal';
 import { BudgetSection } from './BudgetSection';
@@ -18,16 +17,17 @@ import { formatIDR, formatCompact, formatDate, formatMonthYear, getCurrentMonthY
 import { format, subMonths, addMonths } from 'date-fns';
 
 export const FiatDashboard: React.FC = () => {
-  const bankAccounts = useFiatStore((s) => s.bankAccounts);
-  const getTotalFiatBalance = useFiatStore((s) => s.getTotalFiatBalance);
+  const bankAccounts      = useFiatStore((s) => s.bankAccounts);
+  const getTotalFiatBalance   = useFiatStore((s) => s.getTotalFiatBalance);
   const getRecentTransactions = useFiatStore((s) => s.getRecentTransactions);
-  const getMonthSummary = useFiatStore((s) => s.getMonthSummary);
-  const removeTransaction = useFiatStore((s) => s.removeTransaction);
+  const getMonthSummary       = useFiatStore((s) => s.getMonthSummary);
+  const removeTransaction     = useFiatStore((s) => s.removeTransaction);
+  const removeBankAccount     = useFiatStore((s) => s.removeBankAccount);
+  const getBalanceByBank      = useFiatStore((s) => s.getBalanceByBank);
 
   const [showTxModal, setShowTxModal] = useState(false);
   const [showAddBank, setShowAddBank] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthYear());
-  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
 
   // Wire global FAB → open transaction modal
   useEffect(() => {
@@ -40,6 +40,12 @@ export const FiatDashboard: React.FC = () => {
       window.removeEventListener('ow:open-bank-modal', openBank);
     };
   }, []);
+
+  const handleRemoveBank = (id: string, name: string) => {
+    if (confirm(`Hapus akun ${name}? Semua transaksi terkait akan ikut dihapus.`)) {
+      removeBankAccount(id);
+    }
+  };
 
 
   const totalBalance = getTotalFiatBalance();
@@ -174,31 +180,90 @@ export const FiatDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Bank Accounts Row ───────────────────────────── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-bold text-base">Bank Accounts</h3>
-            <span className="text-white/40 text-xs">{bankAccounts.length} account{bankAccounts.length !== 1 ? 's' : ''}</span>
+        {/* ── Bank Accounts List ───────────────────────────── */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+          {/* Section Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <div className="flex items-center gap-2">
+              <Wallet size={15} className="text-indigo-400" />
+              <h3 className="text-white font-bold text-base">Bank Accounts</h3>
+              <span className="text-white/30 text-xs ml-1">({bankAccounts.length})</span>
+            </div>
           </div>
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide snap-x">
-            {bankAccounts.map((acc) => (
-              <div key={acc.id} className="snap-start">
-                <BankCard
-                  account={acc}
-                  isSelected={selectedBankId === acc.id}
-                  onClick={() => setSelectedBankId(selectedBankId === acc.id ? null : acc.id)}
-                />
-              </div>
-            ))}
-            {/* Add Bank CTA */}
+
+          {/* Empty state */}
+          {bankAccounts.length === 0 && (
+            <div className="text-center py-10">
+              <Landmark size={28} className="text-white/15 mx-auto mb-2" />
+              <p className="text-white/30 text-sm">Belum ada rekening. Tambahkan di bawah.</p>
+            </div>
+          )}
+
+          {/* Account rows */}
+          <div className="divide-y divide-white/[0.05]">
+            {bankAccounts.map((acc) => {
+              const balance = getBalanceByBank(acc.id);
+              const isNeg   = balance < 0;
+              return (
+                <div key={acc.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.03] transition-colors group">
+                  {/* Bank icon */}
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-md"
+                    style={{ background: `linear-gradient(135deg, ${acc.color}DD, ${acc.color}88)` }}
+                  >
+                    {acc.icon}
+                  </div>
+
+                  {/* Name + Account number */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{acc.bank_name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {acc.account_number
+                        ? <><CreditCard size={10} className="text-white/30" /><p className="text-white/30 text-xs font-mono">{acc.account_number}</p></>
+                        : <><Landmark size={10} className="text-white/30" /><p className="text-white/30 text-xs">Cash Account</p></>}
+                    </div>
+                  </div>
+
+                  {/* Balance */}
+                  <div className="text-right flex-shrink-0">
+                    <p className={`font-black text-sm ${isNeg ? 'text-red-400' : 'text-white'}`}>
+                      {formatCompact(balance)}
+                    </p>
+                    <p className="text-white/30 text-xs mt-0.5">{formatIDR(balance)}</p>
+                  </div>
+
+                  {/* Action buttons — Edit + Delete */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <button
+                      onClick={() => setShowAddBank(true)}
+                      title="Edit account"
+                      className="w-8 h-8 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/25 flex items-center justify-center transition-all"
+                    >
+                      <Pencil size={13} className="text-indigo-400" />
+                    </button>
+                    <button
+                      onClick={() => handleRemoveBank(acc.id, acc.bank_name)}
+                      title="Delete account"
+                      className="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/25 flex items-center justify-center transition-all"
+                    >
+                      <Trash2 size={13} className="text-red-400" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Standalone Add Bank button */}
+          <div className="px-5 py-4 border-t border-white/[0.05]">
             <button
               onClick={() => setShowAddBank(true)}
-              className="flex-shrink-0 w-64 h-full min-h-[148px] rounded-2xl border-2 border-dashed border-white/15 hover:border-indigo-500/50 hover:bg-indigo-500/5 flex flex-col items-center justify-center gap-2 transition-all group snap-start"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-indigo-500/40 hover:bg-indigo-500/5 text-white/40 hover:text-white/70 text-sm font-medium transition-all group"
             >
-              <div className="w-10 h-10 rounded-xl bg-white/5 group-hover:bg-indigo-500/20 flex items-center justify-center transition-all">
-                <Plus size={20} className="text-white/30 group-hover:text-indigo-400 transition-colors" />
+              <div className="w-5 h-5 rounded-md bg-white/5 group-hover:bg-indigo-500/20 flex items-center justify-center transition-all">
+                <Plus size={12} className="text-white/40 group-hover:text-indigo-400 transition-colors" />
               </div>
-              <span className="text-white/30 group-hover:text-white/60 text-sm font-medium transition-colors">Add Bank Account</span>
+              Tambah Rekening Bank
             </button>
           </div>
         </div>
@@ -330,14 +395,6 @@ export const FiatDashboard: React.FC = () => {
           ))}
         </div>
       </div>
-
-      {/* ── Floating Action Button ──────────────────────────── */}
-      <button
-        onClick={() => setShowTxModal(true)}
-        className="fixed bottom-8 right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 flex items-center justify-center shadow-2xl shadow-indigo-500/40 transition-all hover:scale-110 active:scale-95 z-30"
-      >
-        <Plus size={24} className="text-white" />
-      </button>
 
       {/* ── Modals ─────────────────────────────────────────── */}
       {showTxModal && <TransactionModal onClose={() => setShowTxModal(false)} />}
