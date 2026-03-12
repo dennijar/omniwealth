@@ -177,14 +177,35 @@ function AppShell() {
     activeTab === 'insights'  ? 'Insight Keuangan' :
     'Settings';
 
-  // ── FAB handle toggles menu ──────────────────────────────────
-  const handleFab = () => {
-    setIsFabOpen((v) => !v);
-  };
+  // ── Context-Aware Actions Configuration ──────────────────────
+  const ACTIONS = [
+    { id: 'log_tx', label: 'Log Transaction', targetTab: 'fiat', event: 'ow:open-tx-modal', icon: <Activity size={18} />, colorCls: 'text-indigo-400', bgCls: 'bg-indigo-500/20' },
+    { id: 'add_bank', label: 'Add Bank Account', targetTab: 'fiat', event: 'ow:open-bank-modal', icon: <Landmark size={18} />, colorCls: 'text-emerald-400', bgCls: 'bg-emerald-500/20' },
+    { id: 'add_invest', label: 'Add Investment', targetTab: 'market', event: 'ow:open-asset-modal', icon: <TrendingUp size={18} />, colorCls: 'text-purple-400', bgCls: 'bg-purple-500/20' },
+  ];
 
-  const dispatchAction = (event: string) => {
-    window.dispatchEvent(new CustomEvent(event));
+  type ActionType = typeof ACTIONS[0];
+
+  const visibleActions = ACTIONS.filter(a => {
+    if (activeTab === 'overview') return true;
+    if (activeTab === 'fiat') return a.targetTab === 'fiat';
+    if (activeTab === 'market') return a.targetTab === 'market';
+    return false; // For others, handled below
+  });
+
+  const hideFab = activeTab === 'insights' || activeTab === 'settings';
+
+  const handleFab = () => setIsFabOpen((v) => !v);
+
+  const executeAction = (action: ActionType) => {
     setIsFabOpen(false);
+    if (activeTab !== action.targetTab) {
+      setActiveTab(action.targetTab as AppTab);
+    }
+    // Slight delay to ensure the target tab has mounted and its useEffect listeners are ready
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(action.event));
+    }, 50);
   };
 
   return (
@@ -253,63 +274,49 @@ function AppShell() {
         </main>
 
         {/* ── Global Action Menu (Triggered by FAB) ──────────── */}
-        {isFabOpen && (
+        {!hideFab && isFabOpen && (
           <>
             {/* Backdrop to close menu */}
             <div 
-              className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm transition-opacity"
+              className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm touch-none transition-opacity"
               onClick={() => setIsFabOpen(false)}
             />
             
-            {/* Action Menu Items */}
-            <div className="fixed right-6 bottom-40 md:bottom-28 z-50 flex flex-col gap-3 items-end animate-in slide-in-from-bottom-5 fade-in duration-200">
-              <button
-                onClick={() => dispatchAction('ow:open-tx-modal')}
-                className="flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl shadow-xl transition-all w-max"
-              >
-                <span className="text-sm font-semibold text-white">Log Transaction</span>
-                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                  <Activity size={16} className="text-indigo-400" />
-                </div>
-              </button>
-              
-              <button
-                onClick={() => dispatchAction('ow:open-bank-modal')}
-                className="flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl shadow-xl transition-all w-max"
-              >
-                <span className="text-sm font-semibold text-white">Add Bank Account</span>
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Landmark size={16} className="text-emerald-400" />
-                </div>
-              </button>
-
-              <button
-                onClick={() => dispatchAction('ow:open-asset-modal')}
-                className="flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-xl shadow-xl transition-all w-max"
-              >
-                <span className="text-sm font-semibold text-white">Add Investment</span>
-                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
-                  <TrendingUp size={16} className="text-purple-400" />
-                </div>
-              </button>
+            {/* Menu Modal: Bottom Sheet on Mobile, Floating on Desktop */}
+            <div className="fixed bottom-0 left-0 w-full md:max-w-sm md:bottom-28 md:right-6 md:left-auto md:w-max bg-[#0F172A] md:bg-[#0F172A]/90 md:backdrop-blur-xl rounded-t-3xl md:rounded-2xl pb-safe p-6 md:p-4 z-[9999] shadow-2xl transition-transform transform translate-y-0 border-t md:border border-white/10 flex flex-col gap-2">
+              <h3 className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-2 md:hidden px-2">Select Action</h3>
+              {visibleActions.map((action) => (
+                <button
+                  key={action.id}
+                  onClick={() => executeAction(action)}
+                  className="flex items-center gap-4 bg-white/5 hover:bg-white/10 px-5 py-4 md:py-3 md:px-4 rounded-2xl md:rounded-xl transition-all w-full text-left"
+                >
+                  <div className={`w-10 h-10 md:w-8 md:h-8 rounded-full flex items-center justify-center flex-shrink-0 ${action.bgCls}`}>
+                    <span className={action.colorCls}>{action.icon}</span>
+                  </div>
+                  <span className="text-base md:text-sm font-semibold text-white">{action.label}</span>
+                </button>
+              ))}
             </div>
           </>
         )}
 
         {/* ── Floating Action Button (Universal Toggler) ───────── */}
-        <button
-          id="global-fab"
-          onClick={handleFab}
-          aria-label="Add"
-          className={`fixed right-6 bottom-24 md:bottom-10 z-50 w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-2xl shadow-indigo-500/40 transition-all duration-200 hover:scale-110 active:scale-95 ${
-            isFabOpen ? 'rotate-45' : 'rotate-0'
-          }`}
-        >
-          {isFabOpen
-            ? <X size={24} className="text-white" />
-            : <Plus size={24} className="text-white" />
-          }
-        </button>
+        {!hideFab && (
+          <button
+            id="global-fab"
+            onClick={handleFab}
+            aria-label="Add"
+            className={`fixed right-6 bottom-24 md:bottom-10 z-[9999] w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-2xl shadow-indigo-500/40 transition-all duration-200 hover:scale-110 active:scale-95 ${
+              isFabOpen ? 'rotate-45' : 'rotate-0'
+            }`}
+          >
+            {isFabOpen
+              ? <X size={24} className="text-white" />
+              : <Plus size={24} className="text-white" />
+            }
+          </button>
+        )}
 
         {/* ── Mobile Bottom Nav (hidden on desktop) ──────────── */}
         <BottomNav
