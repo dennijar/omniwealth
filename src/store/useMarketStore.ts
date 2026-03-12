@@ -5,14 +5,14 @@
 // Responsibilities:
 //   • Hold raw Asset definitions (the "DB" layer in SPA)
 //   • Hold enrichedAssets[] after aggregation
-//   • Expose syncMarketData() → calls aggregateMarketData()
-//   • Derived selectors: total value, total PnL, portfolio summary
+//   • Expose syncMarketData() (BATCH SYNC ENGINE with STL Cooldown)
+//   • Uses STRICT MATH VWAP logic & Lot Multipliers.
 // ============================================================
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import Decimal from 'decimal.js';
-import { aggregateMarketData } from '../services/marketAggregator';
+import { fetchViaProxy, fetchCryptoPricesFromGecko } from '../services/api';
 import type {
   Asset,
   EnrichedAsset,
@@ -25,18 +25,11 @@ import type {
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
-// ── UUID helper ───────────────────────────────────────────────
 function uuid(): string {
   return crypto.randomUUID();
 }
 
-
-
-// ── Asset class display config ────────────────────────────────
-export const ASSET_CLASS_CONFIG: Record<
-  AssetClass,
-  { label: string; color: string; bg: string; border: string }
-> = {
+export const ASSET_CLASS_CONFIG: Record<AssetClass, { label: string; color: string; bg: string; border: string }> = {
   STOCK:       { label: 'Stocks',      color: '#3B82F6', bg: 'bg-blue-500/10',   border: 'border-blue-500/20'   },
   CRYPTO:      { label: 'Crypto',      color: '#F59E0B', bg: 'bg-amber-500/10',  border: 'border-amber-500/20'  },
   REAL_ESTATE: { label: 'Real Estate', color: '#10B981', bg: 'bg-emerald-500/10',border: 'border-emerald-500/20'},
@@ -44,7 +37,13 @@ export const ASSET_CLASS_CONFIG: Record<
   MUTUAL_FUND: { label: 'Mutual Fund', color: '#8B5CF6', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
 };
 
-// ── Store ─────────────────────────────────────────────────────
+const COINGECKO_MAP: Record<string, string> = {
+  BTC: 'bitcoin', ETH: 'ethereum', BNB: 'binancecoin', SOL: 'solana',
+  ADA: 'cardano', DOGE: 'dogecoin', MATIC: 'matic-network', AVAX: 'avalanche-2',
+  DOT: 'polkadot', LINK: 'chainlink', UNI: 'uniswap', XRP: 'ripple',
+  LTC: 'litecoin', ATOM: 'cosmos'
+};
+
 export const useMarketStore = create<MarketState>()(
   persist(
     (set, get) => ({
@@ -54,62 +53,173 @@ export const useMarketStore = create<MarketState>()(
       lastSyncedAt:   null,
       syncErrors:     [],
 
-      // ══ ACTIONS ════════════════════════════════════════════
-
       // ── syncMarketData ────────────────────────────────────
-      // Calls the aggregation engine; handles loading & error state
       syncMarketData: async () => {
-        const { assets, isSyncing } = get();
-        if (isSyncing) return; // debounce concurrent calls
+        const { assets, isSyncing, lastSyncedAt } = get();
+        if (isSyncing || assets.length === 0) return;
+
+        // TTL Cooldown Anti-Spam (60 seconds)
+        if (lastSyncedAt) {
+          const secondsSince = (Date.now() - new Date(lastSyncedAt).getTime()) / 1000;
+          if (secondsSince < 60) return;
+        }
 
         set({ isSyncing: true, syncErrors: [] });
+        const errors: string[] = [];
+        const livePrices = new Map<string, Decimal>();
+        const nowIso = new Date().toISOString();
 
         try {
-          const response = await aggregateMarketData(assets);
-          set({
-            assets:         response.assets,
-            enrichedAssets: response.enrichedAssets,
-            lastSyncedAt:   response.syncedAt,
-            syncErrors:     response.errors,
-            isSyncing:      false,
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Unknown aggregation error';
-          // Emergency fallback: enrich all with avg_buy_price
-          const fallback = assets.map((asset) => {
-            const price = new Decimal(asset.manual_valuation ?? asset.average_buy_price);
-            const qty   = new Decimal(asset.quantity);
-            const capital = new Decimal(asset.average_buy_price).times(qty);
-            const curVal  = price.times(qty);
-            const pnl     = curVal.minus(capital);
-            const retPct  = capital.isZero() ? new Decimal(0) : pnl.dividedBy(capital).times(100);
-            return {
+          // 1. Batch fetch Stocks
+          const stockAssets = assets.filter(a => a.asset_class === 'STOCK' && a.priceSource !== 'manual');
+          if (stockAssets.length > 0) {
+            const rawSymbols = [...new Set(stockAssets.map(a => a.symbol?.toUpperCase()).filter(Boolean))] as string[];
+
+            if (rawSymbols.length > 0) {
+              const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(rawSymbols.join(','))}`;
+              try {
+                const res = await fetchViaProxy(url, 8000);
+                const results = (res as any)?.quoteResponse?.result || [];
+                for (const item of results) {
+                  if (item.symbol && item.regularMarketPrice) {
+                    const price = item.currency === 'IDR' || String(item.currency).toUpperCase() === 'IDR'
+                      ? new Decimal(item.regularMarketPrice) 
+                      : new Decimal(item.regularMarketPrice).times(15850);
+                    // store under exact symbol queried
+                    livePrices.set(item.symbol.toUpperCase(), price);
+                  }
+                }
+              } catch (err) {
+                errors.push('Stock batch sync failed. Serving cached prices.');
+              }
+            }
+          }
+
+          // 2. Batch fetch Crypto
+          const cryptoAssets = assets.filter(a => a.asset_class === 'CRYPTO' && a.priceSource !== 'manual');
+          if (cryptoAssets.length > 0) {
+            const symbols = [...new Set(cryptoAssets.map(a => a.symbol?.toUpperCase()).filter(Boolean))] as string[];
+            const coinIds = symbols.map(s => COINGECKO_MAP[s]).filter(Boolean);
+            if (coinIds.length > 0) {
+              try {
+                const data = await fetchCryptoPricesFromGecko(coinIds);
+                for (const sym of symbols) {
+                  const id = COINGECKO_MAP[sym];
+                  if (data[id]) {
+                    const price = data[id].idr ? new Decimal(data[id].idr!) : new Decimal(data[id].usd!).times(15850);
+                    livePrices.set(sym, price);
+                  }
+                }
+              } catch (err) {
+                errors.push('Crypto batch sync failed. Serving cached prices.');
+              }
+            }
+          }
+
+          // 3. Map & Enrich
+          const updatedAssets: Asset[] = [];
+          const newEnriched: EnrichedAsset[] = [];
+
+          for (const asset of assets) {
+            let valuation = new Decimal(asset.livePrice || asset.average_buy_price || 0);
+            let pSource = asset.priceSource;
+            let lastUpdate = asset.lastSyncedAt;
+
+            if (asset.priceSource !== 'manual') {
+              const live = asset.symbol ? livePrices.get(asset.symbol.toUpperCase()) : undefined;
+              if (live) {
+                valuation = live;
+                pSource = 'live';
+                lastUpdate = nowIso;
+              } else {
+                pSource = 'cached';
+              }
+            }
+
+            const updatedAsset: Asset = {
               ...asset,
-              live_price:           price.toFixed(2),
-              current_value:        curVal.toFixed(2),
-              total_capital:        capital.toFixed(2),
+              livePrice: valuation.toNumber(),
+              priceSource: pSource,
+              lastSyncedAt: lastUpdate,
+            };
+            updatedAssets.push(updatedAsset);
+
+            // TASK 2: Strict Math (Lot multiplier for Indonesian Stocks)
+            const multiplier = new Decimal(asset.asset_class === 'STOCK' ? 100 : 1);
+            const qty = new Decimal(asset.quantity);
+            const avgBuy = new Decimal(asset.average_buy_price);
+
+            const capital = avgBuy.times(qty).times(multiplier);
+            const currentVal = valuation.times(qty).times(multiplier);
+            const pnl = currentVal.minus(capital);
+            const returnPct = capital.isZero() ? new Decimal(0) : pnl.dividedBy(capital).times(100);
+
+            newEnriched.push({
+              ...updatedAsset,
+              live_price: valuation.toFixed(2),
+              current_value: currentVal.toFixed(2),
+              total_capital: capital.toFixed(2),
               floating_pnl_nominal: pnl.toFixed(2),
-              return_percentage:    retPct.toFixed(4),
-              price_source:         'error',
-              last_updated:         asset.lastSyncedAt ?? new Date().toISOString(),
-              live_price_num:       price.toNumber(),
-              current_value_num:    curVal.toNumber(),
-              total_capital_num:    capital.toNumber(),
-              floating_pnl_num:     pnl.toNumber(),
-              return_pct_num:       retPct.toDecimalPlaces(2).toNumber(),
-            } satisfies EnrichedAsset;
-          });
+              return_percentage: returnPct.toDecimalPlaces(4).toFixed(4),
+              price_source: pSource,
+              last_updated: lastUpdate ?? nowIso,
+              live_price_num: valuation.toNumber(),
+              current_value_num: currentVal.toNumber(),
+              total_capital_num: capital.toNumber(),
+              floating_pnl_num: pnl.toNumber(),
+              return_pct_num: returnPct.toDecimalPlaces(2).toNumber(),
+            });
+          }
+
           set({
-            enrichedAssets: fallback,
-            syncErrors:     [msg],
-            isSyncing:      false,
-            lastSyncedAt:   new Date().toISOString(),
+            assets: updatedAssets,
+            enrichedAssets: newEnriched,
+            lastSyncedAt: nowIso,
+            syncErrors: errors,
+            isSyncing: false,
+          });
+
+        } catch (err) {
+          // Graceful fallback on complete failure
+          errors.push(err instanceof Error ? err.message : 'Unknown sync crash');
+          set({
+             isSyncing: false,
+             syncErrors: errors,
           });
         }
       },
 
       // ── addAsset ──────────────────────────────────────────
       addAsset: (payload: CreateAssetPayload): Asset => {
+        const { assets } = get();
+
+        // TASK 1: VWAP Accumulation
+        const existing = payload.symbol
+          ? assets.find(a => a.symbol?.toUpperCase() === payload.symbol?.toUpperCase() && a.asset_class === payload.asset_class)
+          : undefined;
+
+        if (existing) {
+          const oldQty = new Decimal(existing.quantity);
+          const oldAvgPrice = new Decimal(existing.average_buy_price);
+          const addedQty = new Decimal(payload.quantity);
+          const addedBuyPrice = new Decimal(payload.average_buy_price);
+
+          const newQty = oldQty.plus(addedQty);
+          // newAvgPrice = ((oldQty * oldAvgPrice) + (addedQty * addedBuyPrice)) / (oldQty + addedQty)
+          const newAvgPrice = oldQty.times(oldAvgPrice).plus(addedQty.times(addedBuyPrice)).dividedBy(newQty);
+
+          const updatedAsset: Asset = {
+            ...existing,
+            quantity: newQty.toFixed(8),
+            average_buy_price: newAvgPrice.toFixed(2),
+          };
+
+          set((state) => ({
+            assets: state.assets.map(a => a.id === existing.id ? updatedAsset : a)
+          }));
+          return updatedAsset;
+        }
+
         const newAsset: Asset = {
           id:                uuid(),
           name:              payload.name,
@@ -125,7 +235,7 @@ export const useMarketStore = create<MarketState>()(
           logo_url:          null,
           created_at:        new Date().toISOString(),
           // ── 3-Tier Fallback init ──
-          livePrice:         payload.manual_valuation ? payload.manual_valuation : payload.average_buy_price,
+          livePrice:         payload.manual_valuation ? Number(payload.manual_valuation) : Number(payload.average_buy_price),
           priceSource:       payload.manual_valuation ? 'manual' : 'cached',
           lastSyncedAt:      null,
         };
@@ -159,7 +269,6 @@ export const useMarketStore = create<MarketState>()(
 
       // ══ SELECTORS ══════════════════════════════════════════
 
-      // Sum of all current_value across enriched assets
       getTotalInvestmentValue: (): number => {
         return get().enrichedAssets.reduce(
           (sum, a) => new Decimal(sum).plus(new Decimal(a.current_value)).toNumber(),
@@ -167,7 +276,6 @@ export const useMarketStore = create<MarketState>()(
         );
       },
 
-      // Sum of all floating_pnl_nominal
       getTotalFloatingPnL: (): number => {
         return get().enrichedAssets.reduce(
           (sum, a) => new Decimal(sum).plus(new Decimal(a.floating_pnl_nominal)).toNumber(),
@@ -175,7 +283,6 @@ export const useMarketStore = create<MarketState>()(
         );
       },
 
-      // Sum of all total_capital
       getTotalCapital: (): number => {
         return get().enrichedAssets.reduce(
           (sum, a) => new Decimal(sum).plus(new Decimal(a.total_capital)).toNumber(),
@@ -183,33 +290,22 @@ export const useMarketStore = create<MarketState>()(
         );
       },
 
-      // Weighted portfolio return %
       getTotalReturnPercentage: (): number => {
         const total   = get().getTotalInvestmentValue();
         const capital = get().getTotalCapital();
         if (capital === 0) return 0;
-        return new Decimal(total)
-          .minus(capital)
-          .dividedBy(capital)
-          .times(100)
-          .toDecimalPlaces(2)
-          .toNumber();
+        return new Decimal(total).minus(capital).dividedBy(capital).times(100).toDecimalPlaces(2).toNumber();
       },
 
-      // Full breakdown by asset class
       getPortfolioSummary: (): PortfolioSummary => {
         const { enrichedAssets } = get();
         const totalValue = get().getTotalInvestmentValue();
-
         const byClass = {} as Record<AssetClass, ClassSummary>;
 
         for (const asset of enrichedAssets) {
           const cls = asset.asset_class;
           if (!byClass[cls]) {
-            byClass[cls] = {
-              count: 0, currentValue: 0, capital: 0, pnl: 0,
-              returnPct: 0, allocation: 0,
-            };
+            byClass[cls] = { count: 0, currentValue: 0, capital: 0, pnl: 0, returnPct: 0, allocation: 0 };
           }
           const c = byClass[cls];
           c.count       += 1;
@@ -218,19 +314,10 @@ export const useMarketStore = create<MarketState>()(
           c.pnl          = new Decimal(c.pnl).plus(asset.floating_pnl_nominal).toNumber();
         }
 
-        // Second pass: compute returnPct & allocation
         for (const cls of Object.keys(byClass) as AssetClass[]) {
           const c = byClass[cls];
-          c.returnPct  = c.capital > 0
-            ? new Decimal(c.currentValue).minus(c.capital)
-                .dividedBy(c.capital).times(100)
-                .toDecimalPlaces(2).toNumber()
-            : 0;
-          c.allocation = totalValue > 0
-            ? new Decimal(c.currentValue)
-                .dividedBy(totalValue).times(100)
-                .toDecimalPlaces(1).toNumber()
-            : 0;
+          c.returnPct  = c.capital > 0 ? new Decimal(c.currentValue).minus(c.capital).dividedBy(c.capital).times(100).toDecimalPlaces(2).toNumber() : 0;
+          c.allocation = totalValue > 0 ? new Decimal(c.currentValue).dividedBy(totalValue).times(100).toDecimalPlaces(1).toNumber() : 0;
         }
 
         return {
@@ -242,12 +329,10 @@ export const useMarketStore = create<MarketState>()(
         };
       },
 
-      // Find single enriched asset by id
       getEnrichedById: (id: string): EnrichedAsset | undefined => {
         return get().enrichedAssets.find((a) => a.id === id);
       },
 
-      // Filter enriched assets by class
       getAssetsByClass: (cls: AssetClass): EnrichedAsset[] => {
         return get().enrichedAssets.filter((a) => a.asset_class === cls);
       },
