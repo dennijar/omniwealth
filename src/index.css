@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* ── Global Scrollbar Hide ── */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Custom scrollbar for selects ── */
+select option {
+  background-color: #0F1729;
+  color: white;
+}
+
+/* ── Smooth everything ── */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Input autofill override ── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #0F1729 inset;
+  -webkit-text-fill-color: white;
+  caret-color: white;
+}
