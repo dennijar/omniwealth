@@ -73,7 +73,7 @@ function buildEnrichedAsset(
     floating_pnl_nominal:   pnl.toFixed(2),
     return_percentage:      returnPct.toDecimalPlaces(4).toFixed(4),
     price_source:           source,
-    last_updated:           new Date().toISOString(),
+    last_updated:           asset.lastSyncedAt ?? new Date().toISOString(),
     // Convenience numerics
     live_price_num:         livePriceIdr.toNumber(),
     current_value_num:      curVal.toNumber(),
@@ -126,7 +126,7 @@ async function fetchCryptoPrices(
         : null;
 
       if (priceIdr) {
-        result.set(asset.id, { priceIdr, source: 'LIVE' });
+        result.set(asset.id, { priceIdr, source: 'live' });
       }
     }
   } catch {
@@ -167,9 +167,11 @@ async function fetchStockPrices(
           ? new Decimal(rawPrice)
           : usdToIdr(rawPrice);
 
-        result.set(asset.id, { priceIdr, source: 'LIVE' });
+        if (priceIdr) {
+          result.set(asset.id, { priceIdr, source: 'live' });
+        }
       } catch {
-        // Leave entry absent → main loop falls back to avg_buy_price
+        // Leave entry absent → main loop falls back to cache
       }
     }),
   );
@@ -184,6 +186,7 @@ export async function aggregateMarketData(
 ): Promise<MarketSyncResponse> {
   const errors: string[]       = [];
   const enrichedAssets: EnrichedAsset[] = [];
+  const updatedAssets: Asset[] = [];
 
   // Partition by class
   const byClass = assets.reduce<Record<AssetClass, Asset[]>>(
@@ -194,13 +197,17 @@ export async function aggregateMarketData(
     {} as Record<AssetClass, Asset[]>,
   );
 
-  const cryptoAssets    = byClass['CRYPTO']      ?? [];
-  const stockAssets     = byClass['STOCK']        ?? [];
-  const manualAssets    = [
-    ...(byClass['REAL_ESTATE']  ?? []),
-    ...(byClass['COMMODITY']    ?? []),
-    ...(byClass['MUTUAL_FUND']  ?? []),
-  ];
+  // Filter out manual overrides before fetching
+  const isManual = (a: Asset) => a.priceSource === 'manual';
+  
+  const cryptoAssets    = (byClass['CRYPTO']      ?? []).filter(a => !isManual(a));
+  const stockAssets     = (byClass['STOCK']       ?? []).filter(a => !isManual(a));
+  
+  const manualAssets    = assets.filter(isManual).concat(
+    (byClass['REAL_ESTATE']  ?? []).filter(a => !isManual(a)),
+    (byClass['COMMODITY']    ?? []).filter(a => !isManual(a)),
+    (byClass['MUTUAL_FUND']  ?? []).filter(a => !isManual(a)),
+  );
 
   // ── Fire external fetches in parallel ──────────────────────
   const [cryptoPrices, stockPrices] = await Promise.all([
@@ -208,16 +215,21 @@ export async function aggregateMarketData(
     fetchStockPrices(stockAssets),
   ]);
 
+  const nowIso = new Date().toISOString();
+
   // ── Process CRYPTO ─────────────────────────────────────────
   for (const asset of cryptoAssets) {
     const fetched = cryptoPrices.get(asset.id);
     if (fetched) {
-      enrichedAssets.push(buildEnrichedAsset(asset, fetched.priceIdr, fetched.source));
+      const liveNum = fetched.priceIdr.toNumber();
+      const updated: Asset = { ...asset, livePrice: liveNum, priceSource: 'live', lastSyncedAt: nowIso };
+      updatedAssets.push(updated);
+      enrichedAssets.push(buildEnrichedAsset(updated, fetched.priceIdr, 'live'));
     } else {
-      // Fallback: use average_buy_price
       errors.push(`CRYPTO fallback for ${asset.symbol ?? asset.name}`);
-      const fallback = new Decimal(asset.average_buy_price);
-      enrichedAssets.push(buildEnrichedAsset(asset, fallback, 'FALLBACK'));
+      const updated: Asset = { ...asset, priceSource: 'cached' }; // Keep existing livePrice, keep old lastSyncedAt
+      updatedAssets.push(updated);
+      enrichedAssets.push(buildEnrichedAsset(updated, new Decimal(updated.livePrice || 0), 'cached'));
     }
   }
 
@@ -225,25 +237,38 @@ export async function aggregateMarketData(
   for (const asset of stockAssets) {
     const fetched = stockPrices.get(asset.id);
     if (fetched) {
-      enrichedAssets.push(buildEnrichedAsset(asset, fetched.priceIdr, fetched.source));
+      const liveNum = fetched.priceIdr.toNumber();
+      const updated: Asset = { ...asset, livePrice: liveNum, priceSource: 'live', lastSyncedAt: nowIso };
+      updatedAssets.push(updated);
+      enrichedAssets.push(buildEnrichedAsset(updated, fetched.priceIdr, 'live'));
     } else {
       errors.push(`STOCK fallback for ${asset.symbol ?? asset.name}`);
-      const fallback = new Decimal(asset.average_buy_price);
-      enrichedAssets.push(buildEnrichedAsset(asset, fallback, 'FALLBACK'));
+      const updated: Asset = { ...asset, priceSource: 'cached' }; // Keep existing livePrice, keep old lastSyncedAt
+      updatedAssets.push(updated);
+      enrichedAssets.push(buildEnrichedAsset(updated, new Decimal(updated.livePrice || 0), 'cached'));
     }
   }
 
-  // ── Process MANUAL assets (REAL_ESTATE, etc.) ─────────────
+  // ── Process MANUAL / STATIC assets ─────────────────────────
   for (const asset of manualAssets) {
+    // If it explicitly is marked manual or has manual_valuation, use it. Otherwise livePrice.
     const valuation = asset.manual_valuation
       ? new Decimal(asset.manual_valuation)
-      : new Decimal(asset.average_buy_price);
-    enrichedAssets.push(buildEnrichedAsset(asset, valuation, 'MANUAL'));
+      : new Decimal(asset.livePrice || asset.average_buy_price);
+      
+    const updated: Asset = { ...asset, livePrice: valuation.toNumber(), priceSource: 'manual' };
+    
+    // De-duplicate in case manualAssets overlap (they shouldn't if filtered correctly, but just in case)
+    if (!updatedAssets.find(a => a.id === updated.id)) {
+      updatedAssets.push(updated);
+      enrichedAssets.push(buildEnrichedAsset(updated, valuation, 'manual'));
+    }
   }
 
   return {
+    assets: updatedAssets,
     enrichedAssets,
-    syncedAt:    new Date().toISOString(),
+    syncedAt: nowIso,
     errors,
     totalAssets: enrichedAssets.length,
   };

@@ -5,7 +5,7 @@
 
 export type AssetClass = 'STOCK' | 'CRYPTO' | 'REAL_ESTATE' | 'COMMODITY' | 'MUTUAL_FUND';
 
-export type AssetStatus = 'LIVE' | 'FALLBACK' | 'MANUAL' | 'ERROR';
+export type AssetStatus = 'live' | 'cached' | 'manual' | 'error';
 
 // ── Raw Asset (mirrors Prisma DB record) ─────────────────────
 export interface Asset {
@@ -20,6 +20,11 @@ export interface Asset {
   sector: string | null;
   logo_url: string | null;
   created_at: string;
+  
+  // ── 3-Tier Pricing Fallback State ──
+  livePrice: number;               // The actual price value (cached or live)
+  priceSource: AssetStatus;        // How we got this price
+  lastSyncedAt: string | null;     // ISO Date string of last successful API fetch
 }
 
 // ── Enriched Asset (post-aggregation with live PnL data) ─────
@@ -58,7 +63,8 @@ export interface YahooQuote {
 
 // ── Aggregation Engine Payload ────────────────────────────────
 export interface MarketSyncResponse {
-  enrichedAssets: EnrichedAsset[];
+  assets: Asset[];                 // Updated raw assets with latest cache
+  enrichedAssets: EnrichedAsset[]; // Computed PnL ready for UI
   syncedAt: string;
   errors: string[];
   totalAssets: number;

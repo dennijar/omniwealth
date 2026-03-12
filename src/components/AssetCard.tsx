@@ -49,18 +49,37 @@ function AssetClassIcon({ cls, size = 14 }: { cls: AssetClass; size?: number }) 
 }
 
 // ── Price source badge ────────────────────────────────────────
-function SourceBadge({ source }: { source: AssetStatus }) {
+function SourceBadge({ source, lastUpdated }: { source: AssetStatus; lastUpdated: string }) {
   const map: Record<AssetStatus, { label: string; icon: React.ReactNode; cls: string }> = {
-    LIVE:     { label: 'Live',     icon: <Wifi size={10} />,    cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-    FALLBACK: { label: 'Fallback', icon: <WifiOff size={10} />, cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20'       },
-    MANUAL:   { label: 'Manual',   icon: <Pencil size={10} />,  cls: 'text-blue-400 bg-blue-500/10 border-blue-500/20'          },
-    ERROR:    { label: 'Error',    icon: <WifiOff size={10} />, cls: 'text-rose-400 bg-rose-500/10 border-rose-500/20'          },
+    live:     { label: 'Live',     icon: <Wifi size={10} />,    cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+    cached:   { label: 'Fallback', icon: <WifiOff size={10} />, cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20'       },
+    manual:   { label: 'Manual',   icon: <Pencil size={10} />,  cls: 'text-slate-300 bg-slate-500/10 border-slate-500/30'       },
+    error:    { label: 'Error',    icon: <WifiOff size={10} />, cls: 'text-rose-400 bg-rose-500/10 border-rose-500/20'          },
   };
-  const cfg = map[source] ?? map.FALLBACK;
+  const cfg = map[source] ?? map.cached;
+
+  const formatRelTime = (iso: string) => {
+    try {
+      const ms = Date.now() - new Date(iso).getTime();
+      const mins = Math.max(0, Math.floor(ms / 60000));
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return `${Math.floor(hrs / 24)}d ago`;
+    } catch { return ''; }
+  };
+
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cfg.cls}`}>
-      {cfg.icon} {cfg.label}
-    </span>
+    <div className="flex items-center gap-1.5">
+      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cfg.cls}`}>
+        {cfg.icon} {cfg.label}
+      </span>
+      {source === 'cached' && (
+        <span className="text-[9px] text-amber-500/60 font-medium whitespace-nowrap">
+          Last updated: {formatRelTime(lastUpdated)}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -160,7 +179,7 @@ export const AssetCard: React.FC<AssetCardProps> = ({
                 >
                   {cfg.label}
                 </span>
-                <SourceBadge source={asset.price_source} />
+                <SourceBadge source={asset.price_source} lastUpdated={asset.last_updated} />
               </div>
             </div>
           </div>
@@ -266,12 +285,12 @@ export const AssetCard: React.FC<AssetCardProps> = ({
 
             {/* Action buttons */}
             <div className="flex gap-2 pt-1">
-              {(asset.asset_class === 'REAL_ESTATE' || asset.asset_class === 'MUTUAL_FUND') && onEditValuation && (
+              {onEditValuation && (
                 <button
                   onClick={() => onEditValuation(asset.id, asset.live_price_num)}
                   className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-xs font-semibold transition-all"
                 >
-                  <Pencil size={11} /> Update Valuation
+                  <Pencil size={11} /> Override Price
                 </button>
               )}
               {onRemove && (

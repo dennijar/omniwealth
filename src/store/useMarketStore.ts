@@ -67,6 +67,7 @@ export const useMarketStore = create<MarketState>()(
         try {
           const response = await aggregateMarketData(assets);
           set({
+            assets:         response.assets,
             enrichedAssets: response.enrichedAssets,
             lastSyncedAt:   response.syncedAt,
             syncErrors:     response.errors,
@@ -89,8 +90,8 @@ export const useMarketStore = create<MarketState>()(
               total_capital:        capital.toFixed(2),
               floating_pnl_nominal: pnl.toFixed(2),
               return_percentage:    retPct.toFixed(4),
-              price_source:         'ERROR' as const,
-              last_updated:         new Date().toISOString(),
+              price_source:         'error',
+              last_updated:         asset.lastSyncedAt ?? new Date().toISOString(),
               live_price_num:       price.toNumber(),
               current_value_num:    curVal.toNumber(),
               total_capital_num:    capital.toNumber(),
@@ -123,6 +124,10 @@ export const useMarketStore = create<MarketState>()(
           sector:            payload.sector ?? null,
           logo_url:          null,
           created_at:        new Date().toISOString(),
+          // ── 3-Tier Fallback init ──
+          livePrice:         payload.manual_valuation ? payload.manual_valuation : payload.average_buy_price,
+          priceSource:       payload.manual_valuation ? 'manual' : 'cached',
+          lastSyncedAt:      null,
         };
         set((state) => ({ assets: [...state.assets, newAsset] }));
         return newAsset;
@@ -141,7 +146,12 @@ export const useMarketStore = create<MarketState>()(
         set((state) => ({
           assets: state.assets.map((a) =>
             a.id === id
-              ? { ...a, manual_valuation: new Decimal(value).toFixed(2) }
+              ? { 
+                  ...a, 
+                  manual_valuation: new Decimal(value).toFixed(2),
+                  livePrice: value,
+                  priceSource: 'manual'
+                }
               : a,
           ),
         }));
