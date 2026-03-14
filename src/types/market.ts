@@ -98,9 +98,10 @@ export interface MarketState {
 
   // ── Actions ──
   syncMarketData: () => Promise<void>;
-  addAsset: (payload: CreateAssetPayload) => Asset;
-  removeAsset: (id: string) => void;
-  updateManualValuation: (id: string, value: number) => void;
+  addAsset: (payload: CreateAssetPayload) => Promise<Asset | null>;
+  removeAsset: (id: string) => Promise<void>;
+  updateManualValuation: (id: string, value: number) => Promise<void>;
+  fetchUserData: () => Promise<void>;
 
   // ── Selectors ──
   getTotalInvestmentValue: () => number;

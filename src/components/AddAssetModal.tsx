@@ -90,7 +90,7 @@ export const AddAssetModal: React.FC<Props> = ({ onClose, onAdded }) => {
     };
 
     setLoading(true);
-    addAsset(payload);
+    await addAsset(payload);
     await syncMarketData();
     setLoading(false);
     onAdded?.();

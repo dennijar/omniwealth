@@ -46,7 +46,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({ onClose, def
     if (!bankId || !amount || !category) return;
     setLoading(true);
 
-    const result = addTransaction({
+    const result = await addTransaction({
       bank_account_id: bankId,
       type,
       category,

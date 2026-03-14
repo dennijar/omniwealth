@@ -136,13 +136,12 @@ export const BudgetSection: React.FC<BudgetSectionProps> = ({ monthYear }) => {
               {/* Progress Bar */}
               <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    item.isOverBudget
-                      ? 'bg-red-500'
-                      : item.percentage >= 80
+                  className={`h-full rounded-full transition-all duration-500 ${item.isOverBudget
+                    ? 'bg-red-500'
+                    : item.percentage >= 80
                       ? 'bg-amber-500'
                       : 'bg-emerald-500'
-                  }`}
+                    }`}
                   style={{ width: `${item.percentage}%` }}
                 />
               </div>

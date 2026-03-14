@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import {
   Shield, BarChart2,
-  LayoutDashboard, Wallet, TrendingUp, Brain, Settings, Plus, X, Landmark, Activity,
+  LayoutDashboard, Wallet, TrendingUp, Brain, Settings, Plus, X, Landmark, Activity, Loader2,
 } from 'lucide-react';
 import { FiatDashboard }      from './components/FiatDashboard';
 import { MarketDashboard }    from './components/MarketDashboard';
@@ -23,6 +23,9 @@ import { useFiatStore }       from './store/useFiatStore';
 import { useMarketStore }     from './store/useMarketStore';
 import { useNetWorthStore }   from './store/useNetWorthStore';
 import { useInsightStore }    from './store/useInsightStore';
+import { useAuthStore }       from './store/useAuthStore';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { LoginScreen }        from './components/LoginScreen';
 import { formatCompact }      from './utils/format';
 
 export type Tab = AppTab;
@@ -334,9 +337,67 @@ function AppShell() {
   );
 }
 
-// ── Root App — onboarding gate ────────────────────────────────────
+// ── Root App — onboarding gate and auth shell ─────────────────────
 export function App() {
   const isFirstTimeSetup = useAppStore((s) => s.isFirstTimeSetup);
+  const { user, isLoadingAuth, setUser, setSession, setLoadingAuth } = useAuthStore();
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-500/10 mb-6">
+          <Shield className="w-8 h-8" />
+        </div>
+        <h1 className="text-2xl font-bold text-white mb-3">Supabase Configuration Missing</h1>
+        <p className="text-slate-400 max-w-md mb-6 leading-relaxed">
+          Please add your valid <code className="bg-slate-900 border border-white/10 px-1.5 py-0.5 rounded text-indigo-400">VITE_SUPABASE_URL</code> and <code className="bg-slate-900 border border-white/10 px-1.5 py-0.5 rounded text-indigo-400">VITE_SUPABASE_ANON_KEY</code> to the <code className="bg-slate-900 border border-white/10 px-1.5 py-0.5 rounded text-slate-300">.env.local</code> file and restart the development server.
+        </p>
+        <div className="text-left bg-slate-900 border border-white/10 rounded-xl p-4 w-full max-w-md font-mono text-xs sm:text-sm text-slate-300 overflow-x-auto">
+          <span className="text-indigo-400">VITE_SUPABASE_URL</span>=https://your-project.supabase.co<br/>
+          <span className="text-indigo-400">VITE_SUPABASE_ANON_KEY</span>=eyJhbGciOiJIUzI1Ni...
+        </div>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    // 1. Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        useFiatStore.getState().fetchUserData();
+        useMarketStore.getState().fetchUserData();
+      }
+      setLoadingAuth(false);
+    });
+
+    // 2. Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        useFiatStore.getState().fetchUserData();
+        useMarketStore.getState().fetchUserData();
+      }
+      setLoadingAuth(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [setSession, setUser, setLoadingAuth]);
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
+        <p className="text-slate-400 text-sm font-medium tracking-wide">Authenticating securely...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   if (isFirstTimeSetup) {
     return <OnboardingWizard />;

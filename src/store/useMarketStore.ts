@@ -22,6 +22,8 @@ import type {
   PortfolioSummary,
   CreateAssetPayload,
 } from '../types/market';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from './useAuthStore';
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
@@ -189,8 +191,44 @@ export const useMarketStore = create<MarketState>()(
         }
       },
 
+      // ── fetchUserData (Cloud-First Sync) ────────────────────
+      fetchUserData: async () => {
+        const user = useAuthStore.getState().user;
+        if (!user) return;
+        
+        try {
+          const { data } = await supabase.from('assets').select('*').eq('user_id', user.id);
+          if (data) {
+            const mappedAssets: Asset[] = data.map(dbA => ({
+              id: dbA.id,
+              name: dbA.name,
+              symbol: dbA.symbol,
+              asset_class: dbA.asset_class as AssetClass,
+              quantity: dbA.quantity.toString(),
+              average_buy_price: dbA.average_buy_price.toString(),
+              manual_valuation: dbA.manual_valuation ? dbA.manual_valuation.toString() : null,
+              currency: dbA.currency,
+              sector: dbA.sector,
+              logo_url: dbA.logo_url,
+              livePrice: dbA.live_price ? Number(dbA.live_price) : Number(dbA.average_buy_price),
+              priceSource: dbA.price_source as any,
+              lastSyncedAt: dbA.last_synced_at,
+              created_at: dbA.created_at,
+            }));
+            set({ assets: mappedAssets });
+            // re-run enrichment
+            get().syncMarketData();
+          }
+        } catch (err) {
+          console.error('Failed to fetch market data from Supabase:', err);
+        }
+      },
+
       // ── addAsset ──────────────────────────────────────────
-      addAsset: (payload: CreateAssetPayload): Asset => {
+      addAsset: async (payload: CreateAssetPayload): Promise<Asset | null> => {
+        const user = useAuthStore.getState().user;
+        if (!user) return null;
+
         const { assets } = get();
 
         // TASK 1: VWAP Accumulation
@@ -214,11 +252,25 @@ export const useMarketStore = create<MarketState>()(
             average_buy_price: newAvgPrice.toFixed(2),
           };
 
-          set((state) => ({
-            assets: state.assets.map(a => a.id === existing.id ? updatedAsset : a)
-          }));
-          return updatedAsset;
-        }
+            // Update in Supabase
+            const { error: patchErr } = await supabase.from('assets').update({
+              quantity: newQty.toFixed(8),
+              average_buy_price: newAvgPrice.toFixed(2),
+            }).eq('id', existing.id);
+
+            if (patchErr) {
+              console.error('Supabase patch error (VWAP Accumulation):', patchErr);
+              return null;
+            }
+
+            set((state) => ({
+              assets: state.assets.map(a => a.id === existing.id ? updatedAsset : a)
+            }));
+            
+            // Re-enrich immediately to reflect VWAP locally
+            get().syncMarketData();
+            return updatedAsset;
+          }
 
         const newAsset: Asset = {
           id:                uuid(),
@@ -239,32 +291,70 @@ export const useMarketStore = create<MarketState>()(
           priceSource:       payload.manual_valuation ? 'manual' : 'cached',
           lastSyncedAt:      null,
         };
+
+        const { error } = await supabase.from('assets').insert({
+          id: newAsset.id,
+          user_id: user.id,
+          name: newAsset.name,
+          symbol: newAsset.symbol,
+          asset_class: newAsset.asset_class,
+          quantity: newAsset.quantity,
+          average_buy_price: newAsset.average_buy_price,
+          manual_valuation: newAsset.manual_valuation,
+          currency: newAsset.currency,
+          sector: newAsset.sector,
+          logo_url: newAsset.logo_url,
+          live_price: newAsset.livePrice,
+          price_source: newAsset.priceSource,
+          last_synced_at: newAsset.lastSyncedAt,
+        });
+
+        if (error) {
+          console.error('Supabase insert error (assets):', error);
+          return null;
+        }
+
         set((state) => ({ assets: [...state.assets, newAsset] }));
+        
+        // Re-enrich immediately
+        get().syncMarketData();
         return newAsset;
       },
 
       // ── removeAsset ───────────────────────────────────────
-      removeAsset: (id: string) => {
-        set((state) => ({
-          assets:         state.assets.filter((a) => a.id !== id),
-          enrichedAssets: state.enrichedAssets.filter((a) => a.id !== id),
-        }));
+      removeAsset: async (id: string) => {
+        const { error } = await supabase.from('assets').delete().eq('id', id);
+        if (!error) {
+          set((state) => ({
+            assets:         state.assets.filter((a) => a.id !== id),
+            enrichedAssets: state.enrichedAssets.filter((a) => a.id !== id),
+          }));
+        }
       },
 
       // ── updateManualValuation ─────────────────────────────
-      updateManualValuation: (id: string, value: number) => {
-        set((state) => ({
-          assets: state.assets.map((a) =>
-            a.id === id
-              ? { 
-                  ...a, 
-                  manual_valuation: new Decimal(value).toFixed(2),
-                  livePrice: value,
-                  priceSource: 'manual'
-                }
-              : a,
-          ),
-        }));
+      updateManualValuation: async (id: string, value: number) => {
+        const { error } = await supabase.from('assets').update({
+          manual_valuation: new Decimal(value).toFixed(2),
+          live_price: value,
+          price_source: 'manual'
+        }).eq('id', id);
+
+        if (!error) {
+          set((state) => ({
+            assets: state.assets.map((a) =>
+              a.id === id
+                ? { 
+                    ...a, 
+                    manual_valuation: new Decimal(value).toFixed(2),
+                    livePrice: value,
+                    priceSource: 'manual'
+                  }
+                : a,
+            ),
+          }));
+          get().syncMarketData();
+        }
       },
 
       // ══ SELECTORS ══════════════════════════════════════════

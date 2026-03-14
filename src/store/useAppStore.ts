@@ -28,7 +28,7 @@ interface AppState {
   isModalOpen:      boolean;
 
   // ── Actions ────────────────────────────────────────────────
-  completeOnboarding: (data: OnboardingData) => void;
+  completeOnboarding: (data: OnboardingData) => Promise<void>;
   setActiveTab:       (tab: AppTab)          => void;
   setDarkMode:        (enabled: boolean)     => void;
   setCurrency:        (symbol: CurrencySymbol) => void;
@@ -52,10 +52,10 @@ export const useAppStore = create<AppState>()(
       isModalOpen:      false,
 
       // ── completeOnboarding ──────────────────────────────────
-      completeOnboarding: (data: OnboardingData) => {
+      completeOnboarding: async (data: OnboardingData) => {
         const { addBankAccount, addTransaction } = useFiatStore.getState();
 
-        const account = addBankAccount({
+        const account = await addBankAccount({
           bank_name:       data.bankName,
           initial_balance: data.initialBalance,
           currency:        'IDR',
@@ -63,8 +63,8 @@ export const useAppStore = create<AppState>()(
           icon:            data.bankName[0]?.toUpperCase() ?? '#',
         });
 
-        if (data.monthlyIncome > 0) {
-          addTransaction({
+        if (account && data.monthlyIncome > 0) {
+          await addTransaction({
             bank_account_id: account.id,
             type:            'INCOME',
             category:        'Salary',

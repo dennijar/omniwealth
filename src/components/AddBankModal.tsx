@@ -30,9 +30,9 @@ export const AddBankModal: React.FC<AddBankModalProps> = ({ onClose }) => {
   const [currency, setCurrency] = useState<Currency>('IDR');
   const [success, setSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    addBankAccount({
+    await addBankAccount({
       bank_name: selectedBank.name,
       account_number: accountNumber || undefined,
       initial_balance: parseFloat(initialBalance) || 0,

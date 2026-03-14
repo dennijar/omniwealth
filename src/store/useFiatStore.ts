@@ -18,6 +18,8 @@ import {
   MonthSummary,
   TransactionType,
 } from '../types/fiat';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from './useAuthStore';
 
 // ── Precision config ──────────────────────────────────────────
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
@@ -48,12 +50,13 @@ interface FiatState {
   budgets: MonthlyBudget[];
 
   // ── Mutations ──
-  addBankAccount: (payload: CreateBankAccountPayload) => BankAccount;
-  removeBankAccount: (id: string) => void;
-  addTransaction: (payload: CreateTransactionPayload) => { success: boolean; warning?: string; transaction?: Transaction };
-  removeTransaction: (id: string) => void;
-  upsertBudget: (payload: CreateBudgetPayload) => MonthlyBudget;
-  removeBudget: (id: string) => void;
+  addBankAccount: (payload: CreateBankAccountPayload) => Promise<BankAccount | null>;
+  removeBankAccount: (id: string) => Promise<void>;
+  addTransaction: (payload: CreateTransactionPayload) => Promise<{ success: boolean; warning?: string; transaction?: Transaction }>;
+  removeTransaction: (id: string) => Promise<void>;
+  upsertBudget: (payload: CreateBudgetPayload) => Promise<MonthlyBudget | null>;
+  removeBudget: (id: string) => Promise<void>;
+  fetchUserData: () => Promise<void>;
 
   // ── Selectors ──
   getTotalFiatBalance: () => number;
@@ -72,8 +75,31 @@ export const useFiatStore = create<FiatState>()(
       transactions: [],
       budgets: [],
 
+      // ── fetchUserData (Cloud-First Sync) ────────────────────
+      fetchUserData: async () => {
+        const user = useAuthStore.getState().user;
+        if (!user) return;
+        
+        try {
+          const [banksRes, txsRes, budgetsRes] = await Promise.all([
+            supabase.from('bank_accounts').select('*').eq('user_id', user.id),
+            supabase.from('transactions').select('*').eq('user_id', user.id),
+            supabase.from('budgets').select('*').eq('user_id', user.id),
+          ]);
+          
+          if (banksRes.data) set({ bankAccounts: banksRes.data.map(b => ({...b, initial_balance: b.initial_balance.toString()})) });
+          if (txsRes.data) set({ transactions: txsRes.data.map(t => ({...t, amount: t.amount.toString()})) });
+          if (budgetsRes.data) set({ budgets: budgetsRes.data.map(b => ({...b, limit_amount: b.limit_amount.toString()})) });
+        } catch (err) {
+          console.error('Failed to fetch user data from Supabase:', err);
+        }
+      },
+
       // ── addBankAccount ──────────────────────────────────────
-      addBankAccount: (payload) => {
+      addBankAccount: async (payload) => {
+        const user = useAuthStore.getState().user;
+        if (!user) return null;
+
         const colorIndex = get().bankAccounts.length % BANK_COLORS.length;
         const newAccount: BankAccount = {
           id: uuid(),
@@ -85,20 +111,37 @@ export const useFiatStore = create<FiatState>()(
           icon: payload.icon || BANK_ICONS[payload.bank_name] || '#',
           created_at: new Date().toISOString(),
         };
+
+        const { error } = await supabase.from('bank_accounts').insert({
+          ...newAccount,
+          user_id: user.id
+        });
+
+        if (error) {
+          console.error('Supabase insert error (bank_accounts):', error);
+          return null;
+        }
+
         set((state) => ({ bankAccounts: [...state.bankAccounts, newAccount] }));
         return newAccount;
       },
 
       // ── removeBankAccount ───────────────────────────────────
-      removeBankAccount: (id) => {
-        set((state) => ({
-          bankAccounts: state.bankAccounts.filter((a) => a.id !== id),
-          transactions: state.transactions.filter((t) => t.bank_account_id !== id),
-        }));
+      removeBankAccount: async (id) => {
+        const { error } = await supabase.from('bank_accounts').delete().eq('id', id);
+        if (!error) {
+          set((state) => ({
+            bankAccounts: state.bankAccounts.filter((a) => a.id !== id),
+            transactions: state.transactions.filter((t) => t.bank_account_id !== id),
+          }));
+        }
       },
 
       // ── addTransaction (ACID-like client ledger) ────────────
-      addTransaction: (payload) => {
+      addTransaction: async (payload) => {
+        const user = useAuthStore.getState().user;
+        if (!user) return { success: false, warning: 'Unauthenticated user.' };
+
         const { bankAccounts, getBalanceByBank } = get();
         const account = bankAccounts.find((a) => a.id === payload.bank_account_id);
         if (!account) return { success: false, warning: 'Bank account not found.' };
@@ -142,43 +185,84 @@ export const useFiatStore = create<FiatState>()(
           updates.push(creditTx);
         }
 
+        // Cloud Insert
+        const insertPayloads = updates.map(tx => ({
+          ...tx,
+          user_id: user.id
+        }));
+        
+        const { error } = await supabase.from('transactions').insert(insertPayloads);
+        
+        if (error) {
+          console.error('Supabase insert error (transactions):', error);
+          return { success: false, warning: 'Database synchronization failed.' };
+        }
+
         set((state) => ({ transactions: [...state.transactions, ...updates] }));
         return { success: true, transaction: newTx };
       },
 
       // ── removeTransaction ───────────────────────────────────
-      removeTransaction: (id) => {
-        set((state) => ({ transactions: state.transactions.filter((t) => t.id !== id) }));
+      removeTransaction: async (id) => {
+        const { error } = await supabase.from('transactions').delete().eq('id', id);
+        if (!error) {
+          set((state) => ({ transactions: state.transactions.filter((t) => t.id !== id) }));
+        }
       },
 
       // ── upsertBudget ────────────────────────────────────────
-      upsertBudget: (payload) => {
+      upsertBudget: async (payload) => {
+        const user = useAuthStore.getState().user;
+        if (!user) return null;
+
         const existing = get().budgets.find(
           (b) => b.month_year === payload.month_year && b.category === payload.category
         );
+        
+        let targetBudget: MonthlyBudget;
+        let isUpdate = false;
+
         if (existing) {
-          const updated: MonthlyBudget = {
+          targetBudget = {
             ...existing,
             limit_amount: new Decimal(payload.limit_amount).toFixed(2),
           };
-          set((state) => ({
-            budgets: state.budgets.map((b) => (b.id === existing.id ? updated : b)),
-          }));
-          return updated;
+          isUpdate = true;
+        } else {
+          targetBudget = {
+            id: uuid(),
+            month_year: payload.month_year,
+            category: payload.category,
+            limit_amount: new Decimal(payload.limit_amount).toFixed(2),
+          };
         }
-        const newBudget: MonthlyBudget = {
-          id: uuid(),
-          month_year: payload.month_year,
-          category: payload.category,
-          limit_amount: new Decimal(payload.limit_amount).toFixed(2),
-        };
-        set((state) => ({ budgets: [...state.budgets, newBudget] }));
-        return newBudget;
+
+        const { error } = await supabase.from('budgets').upsert({
+          ...targetBudget,
+          user_id: user.id
+        });
+
+        if (error) {
+          console.error('Supabase upsert error (budgets):', error);
+          return null;
+        }
+
+        if (isUpdate) {
+          set((state) => ({
+            budgets: state.budgets.map((b) => (b.id === targetBudget.id ? targetBudget : b)),
+          }));
+        } else {
+          set((state) => ({ budgets: [...state.budgets, targetBudget] }));
+        }
+        return targetBudget;
       },
 
       // ── removeBudget ────────────────────────────────────────
-      removeBudget: (id) => {
-        set((state) => ({ budgets: state.budgets.filter((b) => b.id !== id) }));
+      removeBudget: async (id) => {
+        const { error } = await supabase.from('budgets').delete().eq('id', id);
+        if (!error) {
+          set((state) => ({ budgets: state.budgets.filter((b) => b.id !== id) }));
+        }
       },
 
       // ══ SELECTORS ══════════════════════════════════════════
