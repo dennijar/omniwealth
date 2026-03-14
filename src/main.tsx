@@ -38,3 +38,5 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>
 );
 
+// trigger vercel redeploy for env variables
+
