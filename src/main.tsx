@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import "./index.css";
-import { App } from "./App";
+import AppRouter from "./App";
 
 // ── Dark Mode: apply class before React mounts to prevent flash ─
 // Reads the persisted Zustand value directly from localStorage.
@@ -34,7 +34,7 @@ const updateSW = registerSW({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <AppRouter />
   </StrictMode>
 );
 

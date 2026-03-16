@@ -1,0 +1,193 @@
+// ============================================================
+// INTEGRATION GUIDE: CryptoMarketTiers Component
+// ARCHITECT PROTOCOL V23.0
+// ============================================================
+
+// OPTION A: ADD TO NETWORTH DASHBOARD (Recommended)
+// ============================================================
+// File: src/components/NetWorthDashboard.tsx
+//
+// Step 1: Add import at the top
+// 
+// import { CryptoMarketTiers } from './CryptoMarketTiers';
+//
+// Step 2: Add component inside the main return() section
+// Good placement is after the "Recent Assets" section or at the end
+// before the padding div.
+//
+// Example placement (around line 900):
+//
+// <div className="h-16" />
+// </div>
+// </div>
+// );
+
+// becomes:
+
+// <div className="space-y-8">
+//   <div className="h-16" />
+// </div>
+// </div>
+
+// Add inside that space-y-8:
+// <div className="px-4 md:px-6 pb-16">
+//   <CryptoMarketTiers />
+// </div>
+//
+// ============================================================
+
+// OPTION B: ADD TO MARKET DASHBOARD
+// ============================================================
+// File: src/components/MarketDashboard.tsx
+//
+// Step 1: Import at top
+// import { CryptoMarketTiers } from './CryptoMarketTiers';
+//
+// Step 2: Add in main return JSX (typically as first visible section)
+// 
+// <section className="space-y-8">
+//   <CryptoMarketTiers />
+//   
+//   {/* Rest of Market Dashboard content */}
+// </section>
+//
+// ============================================================
+
+// OPTION C: STANDALONE PAGE
+// ============================================================
+// File: Create new file src/components/MarketIntelligencePage.tsx
+//
+import React from 'react';
+import { CryptoMarketTiers } from './CryptoMarketTiers';
+
+export function MarketIntelligencePage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <CryptoMarketTiers />
+      </div>
+    </div>
+  );
+}
+
+export default MarketIntelligencePage;
+
+// Then in App.tsx, add:
+// import { MarketIntelligencePage } from './components/MarketIntelligencePage';
+//
+// And render it in your routing logic or as a tab view
+
+// ============================================================
+// FEATURES INCLUDED
+// ============================================================
+//
+// 1. REAL-TIME WEBSOCKET STREAMING
+//    - Direct connection to Binance public stream (!ticker@arr)
+//    - No API keys required (public endpoint)
+//    - Auto-reconnect with exponential backoff (up to 15 attempts)
+//
+// 2. TIER ORGANIZATION
+//    - TIER 1: Macro Cushion (BTC, ETH, SOL, LINK)
+//    - TIER 4: Degen Zone (DOGE, SHIB, PEPE, FLOKI)
+//    - Easily extendable: add more tiers in CryptoMarketTiers.tsx
+//
+// 3. VISUAL FEEDBACK
+//    - Flash animation on price ticks (green=up, red=down)
+//    - Duration: 300ms for subtle UX
+//    - Skeleton loaders while data loads
+//    - Connection status indicators
+//
+// 4. PRICE FORMATTING
+//    - Automatic decimal precision based on price magnitude
+//    - USD prices for mainstream assets
+//    - 24h change percentage with color coding
+//    - Volume and high/low tracking
+//
+// 5. RESPONSIVE DESIGN
+//    - Mobile: Single column layout
+//    - Desktop: 2-column grid (TIER 1 | TIER 4)
+//    - Touch-optimized, no hover dependencies on mobile
+//
+// ============================================================
+// CUSTOMIZATION
+// ============================================================
+
+// To add more crypto symbols, edit src/components/CryptoMarketTiers.tsx:
+
+// const TIER_2: TierConfig = {
+//   id: "tier-2",
+//   title: "TIER 2: BLUE CHIPS",
+//   subtitle: "Institutional Grade -- Lower Vol",
+//   symbols: ["ADAUSDT", "DOTSUSDT", "AVAXUSDT", "ATOMUSDT"],
+//   accentClass: "text-blue-400",
+//   gradientClass: "from-blue-950/40 via-slate-900/60 to-slate-900/80",
+//   iconColor: "text-blue-400",
+//   borderAccent: "border-blue-800/30",
+// };
+
+// Then add to ALL_SYMBOLS:
+// const ALL_SYMBOLS = [...TIER_1.symbols, ...TIER_2.symbols, ...TIER_4.symbols];
+
+// And add TierCard to grid:
+// <TierCard config={TIER_2} tickers={tickers} />
+
+// ============================================================
+// CONNECTION MONITORING
+// ============================================================
+
+// The StatusBar component shows real-time connection state:
+// - STREAM ACTIVE (green): Connected and receiving ticks
+// - CONNECTING: Attempting connection (shows retry count)
+// - DISCONNECTED: Manually closed or network issue
+// - CONNECTION FAILED: Max retries exceeded (15 attempts)
+
+// Console logs available (check browser DevTools):
+// [BINANCE-WS] Stream connected
+// [BINANCE-WS] Reconnecting in Xms (attempt Y/15)
+// [BINANCE-WS] Closed | code=1000 reason=Normal Closure
+// [BINANCE-WS] Cleanup complete -- all resources released
+
+// ============================================================
+// PERFORMANCE NOTES
+// ============================================================
+
+// 1. Memory: Each symbol stores only current tick data (not history)
+// 2. WebSocket: Single stream, all symbols (efficient)
+// 3. Rendering: Memoized components (TierCard, TickerRow, StatusBar)
+// 4. Cleanup: Automatic on unmount (all timers cleared)
+// 5. Bundle size: useBinanceTicker hook is pure (no heavy deps)
+
+// ============================================================
+// BROWSER COMPATIBILITY
+// ============================================================
+
+// WebSocket support required:
+// - Chrome 16+
+// - Firefox 11+
+// - Safari 7+
+// - Edge (all versions)
+// - Opera 12.1+
+// - iOS Safari 7+
+// - Android Browser 4.4+
+
+// ============================================================
+// TROUBLESHOOTING
+// ============================================================
+
+// Q: No prices showing?
+// A: Wait 2-3 seconds for WebSocket to connect. Check console
+//    for [BINANCE-WS] messages.
+
+// Q: Prices not updating?
+// A: Check browser Network tab for wss://stream.binance.com
+//    connection. If blocked, may be firewall/proxy issue.
+
+// Q: Want to add your portfolio symbols?
+// A: Edit TIER_1.symbols, TIER_4.symbols arrays with your
+//    preferred USDT pairs (e.g., "BTCUSDT", "ETHUSDT").
+
+// Q: Want to change colors?
+// A: Edit accentClass, gradientClass, iconColor, borderAccent
+//    in TIER_1/TIER_4 configs using Tailwind color names.
+
+// ============================================================

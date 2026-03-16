@@ -1,43 +1,23 @@
-// ============================================================
-// OmniWealth – App.tsx  (v7.0 — Responsive Hybrid Shell)
-// Mobile  → BottomNav
-// Desktop → Left Sidebar + expanded content area
-// FAB     → fixed floating bottom-right, out of BottomNav
-// ============================================================
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { Dashboard } from './pages/Dashboard';
+import { MarketDashboard } from './pages/MarketDashboard';
 
-import { useEffect, useState } from 'react';
-import {
-  Shield, BarChart2,
-  LayoutDashboard, Wallet, TrendingUp, Brain, Settings, Plus, X, Landmark, Activity, Loader2,
-} from 'lucide-react';
-import { FiatDashboard }      from './components/FiatDashboard';
-import { MarketDashboard }    from './components/MarketDashboard';
-import { NetWorthDashboard }  from './components/NetWorthDashboard';
-import { InsightsDashboard }  from './components/InsightsDashboard';
-import { SettingsDashboard }  from './components/SettingsDashboard';
-import { BottomNav }          from './components/BottomNav';
-import { OnboardingWizard }   from './components/OnboardingWizard';
-import { useAppStore }        from './store/useAppStore';
-import type { AppTab }        from './store/useAppStore';
-import { useFiatStore }       from './store/useFiatStore';
-import { useMarketStore }     from './store/useMarketStore';
-import { useNetWorthStore }   from './store/useNetWorthStore';
-import { useInsightStore }    from './store/useInsightStore';
-import { useAuthStore }       from './store/useAuthStore';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { LoginScreen }        from './components/LoginScreen';
-import { formatCompact }      from './utils/format';
+function AppRouter() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="markets" element={<MarketDashboard />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
 
-export type Tab = AppTab;
-
-// ── Sidebar nav items ───────────────────────────────────────────
-const NAV_ITEMS: { key: AppTab; label: string; Icon: React.ElementType }[] = [
-  { key: 'overview',  label: 'Home',     Icon: LayoutDashboard },
-  { key: 'fiat',      label: 'Fiat',     Icon: Wallet          },
-  { key: 'market',    label: 'Invest',   Icon: TrendingUp      },
-  { key: 'insights',  label: 'Insights', Icon: Brain           },
-  { key: 'settings',  label: 'Settings', Icon: Settings        },
-];
+export default AppRouter;
 
 // ── Desktop Left Sidebar ─────────────────────────────────────────
 function Sidebar({
@@ -337,10 +317,10 @@ function AppShell() {
   );
 }
 
-// ── Root App — onboarding gate and auth shell ─────────────────────
+// ── Root App — onboarding gate and auth shell + premium loading ────
 export function App() {
   const isFirstTimeSetup = useAppStore((s) => s.isFirstTimeSetup);
-  const { user, isLoadingAuth, setUser, setSession, setLoadingAuth } = useAuthStore();
+  const { user, isLoadingAuth, setUser, setSession, setLoadingAuth, isHydrating, setHydrating } = useAuthStore();
 
   if (!isSupabaseConfigured) {
     return (
@@ -365,10 +345,26 @@ export function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      
       if (session?.user) {
-        useFiatStore.getState().fetchUserData();
-        useMarketStore.getState().fetchUserData();
+        // 2. Initiate all data fetching in parallel
+        Promise.all([
+          useFiatStore.getState().fetchUserData().catch(() => null),
+          useMarketStore.getState().fetchUserData().catch(() => null),
+        ])
+          .then(() => {
+            // 3. All data hydration complete, set hydrating to false
+            setHydrating(false);
+          })
+          .catch(() => {
+            // Even if fetch fails, stop hydrating to allow user to proceed
+            setHydrating(false);
+          });
+      } else {
+        // No user, hydration complete
+        setHydrating(false);
       }
+      
       setLoadingAuth(false);
     });
 
@@ -377,14 +373,29 @@ export function App() {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        useFiatStore.getState().fetchUserData();
-        useMarketStore.getState().fetchUserData();
+        Promise.all([
+          useFiatStore.getState().fetchUserData().catch(() => null),
+          useMarketStore.getState().fetchUserData().catch(() => null),
+        ])
+          .then(() => {
+            setHydrating(false);
+          })
+          .catch(() => {
+            setHydrating(false);
+          });
+      } else {
+        setHydrating(false);
       }
       setLoadingAuth(false);
     });
 
     return () => subscription.unsubscribe();
-  }, [setSession, setUser, setLoadingAuth]);
+  }, [setSession, setUser, setLoadingAuth, setHydrating]);
+
+  // Premium loading screen during full hydration
+  if (isHydrating) {
+    return <GlobalLoadingScreen />;
+  }
 
   if (isLoadingAuth) {
     return (
