@@ -2,39 +2,44 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useMarketStore } from '../stores/useMarketStore';
 
 interface RawBinanceTicker {
-  s: string;
-  c: string;
-  P: string;
-  p: string;
-  v: string;
-  h: string;
-  l: string;
+  s: string; // symbol
+  c: string; // last price
+  P: string; // price change percent (24h)
+  p: string; // price change (24h)
+  v: string; // volume
+  h: string; // high
+  l: string; // low
 }
 
 const WS_ENDPOINT = 'wss://stream.binance.com:9443/ws/!ticker@arr';
-const RECONNECT_BASE_DELAY = 2000;
-const RECONNECT_MAX_DELAY = 30000;
+const RECONNECT_BASE_DELAY = 2_000;
+const RECONNECT_MAX_DELAY  = 30_000;
 const RECONNECT_MAX_ATTEMPTS = 15;
 const FLASH_DURATION = 300;
 
 export function useBinanceTicker(symbols: string[]) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const mountedRef = useRef(true);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flashTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const priceSnapshotRef = useRef<Record<string, number>>({});
+  const wsRef              = useRef<WebSocket | null>(null);
+  // mountedRef tracks whether this effect is alive.
+  // A shared 'active' flag (connectedRef) prevents Strict Mode double-mount
+  // from opening two simultaneous sockets.
+  const mountedRef         = useRef(false);
+  const connectedRef       = useRef(false); // true once a socket has been opened this mount cycle
+  const reconnectTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashTimersRef     = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const priceSnapshotRef   = useRef<Record<string, number>>({});
+  const symbolsRef         = useRef<Set<string>>(new Set());
 
-  const {
-    updatePrices,
-    clearFlash,
-    setConnectionStatus,
-    addWatchedSymbol,
-    watchedSymbols,
-  } = useMarketStore();
+  // Stable store-action references — safe to read outside render
+  const updatePrices       = useMarketStore.getState().updatePrices;
+  const clearFlash         = useMarketStore.getState().clearFlash;
+  const setConnectionStatus = useMarketStore.getState().setConnectionStatus;
 
+  // Keep symbolsRef in sync with the caller's array
   useEffect(() => {
-    symbols.forEach((sym) => addWatchedSymbol(sym));
-  }, [symbols, addWatchedSymbol]);
+    symbolsRef.current = new Set(symbols.map((s) => s.toUpperCase()));
+  }, [symbols]);
+
+  // ── Timer helpers ───────────────────────────────────────────────────────────
 
   const clearFlashTimer = useCallback((symbol: string) => {
     if (flashTimersRef.current[symbol]) {
@@ -55,23 +60,27 @@ export function useBinanceTicker(symbols: string[]) {
     }
   }, []);
 
+  // ── Reconnect delay (exponential back-off + jitter) ────────────────────────
+
   const getReconnectDelay = useCallback((attempt: number): number => {
     const exponential = RECONNECT_BASE_DELAY * Math.pow(2, attempt);
-    const jitter = Math.random() * 1000;
+    const jitter = Math.random() * 1_000;
     return Math.min(exponential + jitter, RECONNECT_MAX_DELAY);
   }, []);
+
+  // ── Message processor ──────────────────────────────────────────────────────
 
   const processMessage = useCallback(
     (rawData: RawBinanceTicker[]) => {
       if (!mountedRef.current) return;
 
-      const updates: Record<string, any> = {};
-      const watchedSet = new Set(Array.from(watchedSymbols).map((s) => s.toUpperCase()));
+      const updates: Record<string, Parameters<typeof updatePrices>[0][string]> = {};
+      const watchedSet = symbolsRef.current;
 
       for (const raw of rawData) {
         if (!watchedSet.has(raw.s)) continue;
 
-        const currentPrice = parseFloat(raw.c);
+        const currentPrice  = parseFloat(raw.c);
         const previousPrice = priceSnapshotRef.current[raw.s] ?? currentPrice;
 
         let flashDirection: 'up' | 'down' | null = null;
@@ -82,15 +91,16 @@ export function useBinanceTicker(symbols: string[]) {
         priceSnapshotRef.current[raw.s] = currentPrice;
 
         updates[raw.s] = {
-          symbol: raw.s,
-          price: currentPrice,
-          prevPrice: previousPrice,
-          change24h: parseFloat(raw.p),
+          symbol:          raw.s,
+          price:           currentPrice,
+          prevPrice:       previousPrice,
+          // `P` from Binance is the 24-h percent string, e.g. "2.45" => 2.45 (%)
+          change24h:       parseFloat(raw.P),
           changePercent24h: parseFloat(raw.P),
-          volume24h: parseFloat(raw.v),
-          high24h: parseFloat(raw.h),
-          low24h: parseFloat(raw.l),
-          lastUpdate: Date.now(),
+          volume24h:       parseFloat(raw.v),
+          high24h:         parseFloat(raw.h),
+          low24h:          parseFloat(raw.l),
+          lastUpdate:      Date.now(),
           flashDirection,
         };
       }
@@ -99,28 +109,33 @@ export function useBinanceTicker(symbols: string[]) {
 
       updatePrices(updates);
 
+      // Schedule flash-clear
       Object.entries(updates).forEach(([symbol, data]) => {
         if (data.flashDirection) {
           clearFlashTimer(symbol);
           flashTimersRef.current[symbol] = setTimeout(() => {
-            if (mountedRef.current) {
-              clearFlash(symbol);
-            }
+            if (mountedRef.current) clearFlash(symbol);
           }, FLASH_DURATION);
         }
       });
     },
-    [watchedSymbols, updatePrices, clearFlash, clearFlashTimer]
+    [updatePrices, clearFlash, clearFlashTimer]
   );
 
-  const connect = useCallback(() => {
-    if (!mountedRef.current) return;
+  // ── WebSocket connect ──────────────────────────────────────────────────────
 
+  const connect = useCallback(() => {
+    // Guard: don't open a socket if the component has been unmounted or if
+    // another socket is already live (Strict Mode double-mount protection).
+    if (!mountedRef.current) return;
+    if (connectedRef.current) return;
+
+    // Tear down any existing socket before creating a new one
     if (wsRef.current) {
-      wsRef.current.onopen = null;
+      wsRef.current.onopen    = null;
       wsRef.current.onmessage = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onclose = null;
+      wsRef.current.onerror   = null;
+      wsRef.current.onclose   = null;
       if (
         wsRef.current.readyState === WebSocket.OPEN ||
         wsRef.current.readyState === WebSocket.CONNECTING
@@ -131,6 +146,7 @@ export function useBinanceTicker(symbols: string[]) {
     }
 
     setConnectionStatus({ status: 'connecting', errorMessage: null });
+    connectedRef.current = true; // mark as "this mount cycle has a socket"
 
     try {
       const ws = new WebSocket(WS_ENDPOINT);
@@ -141,49 +157,46 @@ export function useBinanceTicker(symbols: string[]) {
           ws.close();
           return;
         }
-        console.log('[BINANCE-WS] Stream connected');
+        console.log('[BINANCE-WS] Connected');
         setConnectionStatus({
-          status: 'connected',
-          lastConnected: Date.now(),
+          status:           'connected',
+          lastConnected:    Date.now(),
           reconnectAttempt: 0,
-          errorMessage: null,
+          errorMessage:     null,
         });
       };
 
       ws.onmessage = (event: MessageEvent) => {
         try {
-          const data = JSON.parse(event.data) as RawBinanceTicker[];
-          if (Array.isArray(data)) {
-            processMessage(data);
-          }
-        } catch {
-          // Drop malformed frames
+          const data = JSON.parse(event.data as string) as RawBinanceTicker[];
+          if (Array.isArray(data)) processMessage(data);
+        } catch (err) {
+          console.warn('[BINANCE-WS] Parse error:', err);
         }
       };
 
       ws.onerror = () => {
-        console.warn('[BINANCE-WS] Connection error');
-        setConnectionStatus({
-          status: 'error',
-          errorMessage: 'WebSocket error occurred',
-        });
+        console.warn('[BINANCE-WS] Socket error — will retry on close');
+        setConnectionStatus({ status: 'error', errorMessage: 'WebSocket error' });
       };
 
-      ws.onclose = (event) => {
-        console.log(`[BINANCE-WS] Closed | code=${event.code}`);
+      ws.onclose = (ev) => {
         if (!mountedRef.current) return;
 
+        console.log(`[BINANCE-WS] Closed (code ${ev.code}, clean: ${ev.wasClean})`);
+        connectedRef.current = false; // allow reconnect
+
         const currentAttempt = useMarketStore.getState().connection.reconnectAttempt;
-        const nextAttempt = currentAttempt + 1;
+        const nextAttempt    = currentAttempt + 1;
 
         if (nextAttempt <= RECONNECT_MAX_ATTEMPTS) {
           const delay = getReconnectDelay(currentAttempt);
-          console.log(`[BINANCE-WS] Reconnecting in ${Math.round(delay)}ms`);
+          console.log(`[BINANCE-WS] Reconnecting in ${Math.round(delay)}ms (attempt ${nextAttempt})`);
 
           setConnectionStatus({
-            status: 'disconnected',
+            status:           'disconnected',
             reconnectAttempt: nextAttempt,
-            errorMessage: `Reconnecting (attempt ${nextAttempt})...`,
+            errorMessage:     `Reconnecting (${nextAttempt} / ${RECONNECT_MAX_ATTEMPTS})...`,
           });
 
           clearReconnectTimer();
@@ -191,40 +204,47 @@ export function useBinanceTicker(symbols: string[]) {
             if (mountedRef.current) connect();
           }, delay);
         } else {
+          console.error('[BINANCE-WS] Max reconnect attempts reached.');
           setConnectionStatus({
-            status: 'error',
+            status:           'error',
             reconnectAttempt: nextAttempt,
-            errorMessage: 'Max reconnection attempts exceeded',
+            errorMessage:     'Max reconnect attempts exceeded. Refresh the page.',
           });
         }
       };
     } catch (err) {
       console.error('[BINANCE-WS] Failed to create WebSocket:', err);
+      connectedRef.current = false;
       setConnectionStatus({
-        status: 'error',
-        errorMessage: 'Failed to create WebSocket connection',
+        status:       'error',
+        errorMessage: 'Failed to create WebSocket',
       });
     }
   }, [processMessage, getReconnectDelay, clearReconnectTimer, setConnectionStatus]);
 
+  // ── Effect: mount → connect, unmount → teardown ────────────────────────────
+
   useEffect(() => {
-    mountedRef.current = true;
+    mountedRef.current   = true;
+    connectedRef.current = false; // fresh mount, no socket yet
+
     connect();
 
     return () => {
-      mountedRef.current = false;
+      mountedRef.current   = false;
+      connectedRef.current = false;
+
       clearReconnectTimer();
       clearAllFlashTimers();
 
       if (wsRef.current) {
-        wsRef.current.onopen = null;
+        wsRef.current.onopen    = null;
         wsRef.current.onmessage = null;
-        wsRef.current.onerror = null;
-        wsRef.current.onclose = null;
+        wsRef.current.onerror   = null;
+        wsRef.current.onclose   = null;
         wsRef.current.close();
         wsRef.current = null;
       }
-      console.log('[BINANCE-WS] Cleanup complete');
     };
   }, [connect, clearReconnectTimer, clearAllFlashTimers]);
 }

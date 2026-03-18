@@ -4,6 +4,21 @@ import { registerSW } from "virtual:pwa-register";
 import "./index.css";
 import AppRouter from "./App";
 
+
+
+// In dev, a previously registered Workbox SW can serve stale bundles and hide new code.
+// Clear SW registrations once per session to avoid reload loops.
+if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+
+    const already = sessionStorage.getItem('ow-dev-sw-cleared') === '1';
+    if (regs.length > 0 && !already) {
+      sessionStorage.setItem('ow-dev-sw-cleared', '1');
+      regs.forEach((r) => r.unregister());
+    }
+  }).catch(()=>{});
+}
+
 // ── Dark Mode: apply class before React mounts to prevent flash ─
 // Reads the persisted Zustand value directly from localStorage.
 try {
@@ -16,7 +31,7 @@ try {
   }
 } catch { /* ignore parse errors on fresh installs */ }
 
-const updateSW = registerSW({
+const updateSW = import.meta.env.PROD ? registerSW({
   onNeedRefresh() {
     console.info("[PWA] New content available — updating…");
     updateSW(true);
@@ -30,7 +45,9 @@ const updateSW = registerSW({
   onRegisterError(error: unknown) {
     console.error("[PWA] Service Worker registration failed:", error);
   },
-});
+}) : (() => () => {})();
+
+
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

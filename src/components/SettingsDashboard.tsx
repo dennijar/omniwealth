@@ -39,9 +39,11 @@ interface RowProps {
 
 function SettingsRow({ icon, iconBg, label, sublabel, right, danger = false, onClick }: RowProps) {
   return (
-    <button
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
-      disabled={!onClick && !right}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); } : undefined}
       className={`
         w-full flex items-center gap-3.5 px-4 py-3.5
         bg-white dark:bg-slate-800/60
@@ -71,12 +73,13 @@ function SettingsRow({ icon, iconBg, label, sublabel, right, danger = false, onC
       <div className="flex-shrink-0 flex items-center gap-1">
         {right ?? (onClick && !danger && <ChevronRight size={15} className="text-slate-300 dark:text-slate-600" />)}
       </div>
-    </button>
+    </div>
   );
 }
 
 // ── iOS-style toggle ──────────────────────────────────────────
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+
   return (
     <button
       onClick={onToggle}

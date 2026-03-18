@@ -1,6 +1,6 @@
 import React from 'react';
 import { Activity, Wifi, AlertTriangle, Loader2 } from 'lucide-react';
-import { useMarketStore } from '../stores/useMarketStore';
+import { useMarketStore, selectPriceData, selectConnectionStatus, selectIsConnected, selectPriceCount } from '../stores/useMarketStore';
 
 interface TierConfig {
   id: string;
@@ -62,7 +62,7 @@ function stripUSDT(symbol: string): string {
 }
 
 const TickerRow: React.FC<TickerRowProps> = React.memo(({ symbol, isLast }) => {
-  const data = useMarketStore((state) => state.prices[symbol]);
+  const data = useMarketStore(selectPriceData(symbol));
   let flashBg = "";
   if (data?.flashDirection === "up") flashBg = "bg-emerald-500/10";
   else if (data?.flashDirection === "down") flashBg = "bg-red-500/10";
@@ -241,14 +241,13 @@ const TierCard: React.FC<TierCardProps> = React.memo(({ config }) => {
 TierCard.displayName = "TierCard";
 
 const StatusBar: React.FC = React.memo(() => {
-  const { connection, priceCount } = useMarketStore((state) => ({
-    connection: state.connection,
-    priceCount: Object.keys(state.prices).length,
-  }));
+  const status = useMarketStore(selectConnectionStatus);
+  const isConnected = useMarketStore(selectIsConnected);
+  const priceCount = useMarketStore(selectPriceCount);
+  const errorMessage = useMarketStore((state) => state.connection.errorMessage);
 
-  const isConnected = connection.status === 'connected';
-  const isConnecting = connection.status === 'connecting';
-  const isError = connection.status === 'error';
+  const isConnecting = status === 'connecting';
+  const isError = status === 'error';
 
   return (
       <div
@@ -274,7 +273,7 @@ const StatusBar: React.FC = React.memo(() => {
           {isError && (
             <>
               <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-              <span className="text-xs font-mono text-red-400 tracking-wide">{connection.errorMessage || 'CONNECTION FAILED'}</span>
+              <span className="text-xs font-mono text-red-400 tracking-wide">{errorMessage || 'CONNECTION FAILED'}</span>
             </>
           )}
         </div>

@@ -12,7 +12,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import Decimal from 'decimal.js';
-import { fetchViaProxy, fetchCryptoPricesFromGecko } from '../services/api';
+
 import type {
   Asset,
   EnrichedAsset,
@@ -39,12 +39,7 @@ export const ASSET_CLASS_CONFIG: Record<AssetClass, { label: string; color: stri
   MUTUAL_FUND: { label: 'Mutual Fund', color: '#8B5CF6', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
 };
 
-const COINGECKO_MAP: Record<string, string> = {
-  BTC: 'bitcoin', ETH: 'ethereum', BNB: 'binancecoin', SOL: 'solana',
-  ADA: 'cardano', DOGE: 'dogecoin', MATIC: 'matic-network', AVAX: 'avalanche-2',
-  DOT: 'polkadot', LINK: 'chainlink', UNI: 'uniswap', XRP: 'ripple',
-  LTC: 'litecoin', ATOM: 'cosmos'
-};
+
 
 export const useMarketStore = create<MarketState>()(
   persist(
@@ -55,140 +50,12 @@ export const useMarketStore = create<MarketState>()(
       lastSyncedAt:   null,
       syncErrors:     [],
 
-      // ── syncMarketData ────────────────────────────────────
+      // ── syncMarketData (Public Proxies Eradicated) ─────────
       syncMarketData: async () => {
-        const { assets, isSyncing, lastSyncedAt } = get();
-        if (isSyncing || assets.length === 0) return;
-
-        // TTL Cooldown Anti-Spam (60 seconds)
-        if (lastSyncedAt) {
-          const secondsSince = (Date.now() - new Date(lastSyncedAt).getTime()) / 1000;
-          if (secondsSince < 60) return;
-        }
-
-        set({ isSyncing: true, syncErrors: [] });
-        const errors: string[] = [];
-        const livePrices = new Map<string, Decimal>();
-        const nowIso = new Date().toISOString();
-
-        try {
-          // 1. Batch fetch Stocks
-          const stockAssets = assets.filter(a => a.asset_class === 'STOCK' && a.priceSource !== 'manual');
-          if (stockAssets.length > 0) {
-            const rawSymbols = [...new Set(stockAssets.map(a => a.symbol?.toUpperCase()).filter(Boolean))] as string[];
-
-            if (rawSymbols.length > 0) {
-              const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(rawSymbols.join(','))}`;
-              try {
-                const res = await fetchViaProxy(url, 8000);
-                const results = (res as any)?.quoteResponse?.result || [];
-                for (const item of results) {
-                  if (item.symbol && item.regularMarketPrice) {
-                    const price = item.currency === 'IDR' || String(item.currency).toUpperCase() === 'IDR'
-                      ? new Decimal(item.regularMarketPrice) 
-                      : new Decimal(item.regularMarketPrice).times(15850);
-                    // store under exact symbol queried
-                    livePrices.set(item.symbol.toUpperCase(), price);
-                  }
-                }
-              } catch (err) {
-                errors.push('Stock batch sync failed. Serving cached prices.');
-              }
-            }
-          }
-
-          // 2. Batch fetch Crypto
-          const cryptoAssets = assets.filter(a => a.asset_class === 'CRYPTO' && a.priceSource !== 'manual');
-          if (cryptoAssets.length > 0) {
-            const symbols = [...new Set(cryptoAssets.map(a => a.symbol?.toUpperCase()).filter(Boolean))] as string[];
-            const coinIds = symbols.map(s => COINGECKO_MAP[s]).filter(Boolean);
-            if (coinIds.length > 0) {
-              try {
-                const data = await fetchCryptoPricesFromGecko(coinIds);
-                for (const sym of symbols) {
-                  const id = COINGECKO_MAP[sym];
-                  if (data[id]) {
-                    const price = data[id].idr ? new Decimal(data[id].idr!) : new Decimal(data[id].usd!).times(15850);
-                    livePrices.set(sym, price);
-                  }
-                }
-              } catch (err) {
-                errors.push('Crypto batch sync failed. Serving cached prices.');
-              }
-            }
-          }
-
-          // 3. Map & Enrich
-          const updatedAssets: Asset[] = [];
-          const newEnriched: EnrichedAsset[] = [];
-
-          for (const asset of assets) {
-            let valuation = new Decimal(asset.livePrice || asset.average_buy_price || 0);
-            let pSource = asset.priceSource;
-            let lastUpdate = asset.lastSyncedAt;
-
-            if (asset.priceSource !== 'manual') {
-              const live = asset.symbol ? livePrices.get(asset.symbol.toUpperCase()) : undefined;
-              if (live) {
-                valuation = live;
-                pSource = 'live';
-                lastUpdate = nowIso;
-              } else {
-                pSource = 'cached';
-              }
-            }
-
-            const updatedAsset: Asset = {
-              ...asset,
-              livePrice: valuation.toNumber(),
-              priceSource: pSource,
-              lastSyncedAt: lastUpdate,
-            };
-            updatedAssets.push(updatedAsset);
-
-            // TASK 2: Strict Math (Lot multiplier for Indonesian Stocks)
-            const multiplier = new Decimal(asset.asset_class === 'STOCK' ? 100 : 1);
-            const qty = new Decimal(asset.quantity);
-            const avgBuy = new Decimal(asset.average_buy_price);
-
-            const capital = avgBuy.times(qty).times(multiplier);
-            const currentVal = valuation.times(qty).times(multiplier);
-            const pnl = currentVal.minus(capital);
-            const returnPct = capital.isZero() ? new Decimal(0) : pnl.dividedBy(capital).times(100);
-
-            newEnriched.push({
-              ...updatedAsset,
-              live_price: valuation.toFixed(2),
-              current_value: currentVal.toFixed(2),
-              total_capital: capital.toFixed(2),
-              floating_pnl_nominal: pnl.toFixed(2),
-              return_percentage: returnPct.toDecimalPlaces(4).toFixed(4),
-              price_source: pSource,
-              last_updated: lastUpdate ?? nowIso,
-              live_price_num: valuation.toNumber(),
-              current_value_num: currentVal.toNumber(),
-              total_capital_num: capital.toNumber(),
-              floating_pnl_num: pnl.toNumber(),
-              return_pct_num: returnPct.toDecimalPlaces(2).toNumber(),
-            });
-          }
-
-          set({
-            assets: updatedAssets,
-            enrichedAssets: newEnriched,
-            lastSyncedAt: nowIso,
-            syncErrors: errors,
-            isSyncing: false,
-          });
-
-        } catch (err) {
-          // Graceful fallback on complete failure
-          errors.push(err instanceof Error ? err.message : 'Unknown sync crash');
-          set({
-             isSyncing: false,
-             syncErrors: errors,
-          });
-        }
+        // This function previously used high-risk public CORS proxies.
+        // It has been disabled to ensure security and prevent console errors.
+        console.warn('Market sync via public proxies is disabled.');
+        set({ isSyncing: false });
       },
 
       // ── fetchUserData (Cloud-First Sync) ────────────────────
