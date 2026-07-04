@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Shield, Mail, Lock, Loader2, Info, User, Phone, Eye, EyeOff, Check, X } from 'lucide-react';
+import { Shield, Mail, Lock, Loader2, User, Eye, EyeOff, Check, X } from 'lucide-react';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 

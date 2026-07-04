@@ -12,6 +12,54 @@ interface ErrorResponse {
   message: string;
 }
 
+type MarketSource = 'yahoo' | 'finnhub' | 'binance';
+
+function normalizeSource(source: unknown): MarketSource {
+  if (source === 'finnhub' || source === 'binance' || source === 'yahoo') {
+    return source;
+  }
+  return 'yahoo';
+}
+
+async function fetchYahooQuote(symbol: string): Promise<MarketData | null> {
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+  const yahooResponse = await fetch(yahooUrl, {
+    headers: {
+      'user-agent': 'OmniWealth/1.0 (+https://vercel.com)',
+      accept: 'application/json',
+    },
+  });
+
+  if (!yahooResponse.ok) return null;
+
+  const yahooData = await yahooResponse.json() as {
+    chart?: {
+      result?: Array<{
+        meta?: {
+          currency?: string;
+          regularMarketPrice?: number;
+          previousClose?: number;
+          chartPreviousClose?: number;
+          regularMarketTime?: number;
+          symbol?: string;
+        };
+      }>;
+      error?: unknown;
+    };
+  };
+
+  const meta = yahooData.chart?.result?.[0]?.meta;
+  const price = meta?.regularMarketPrice ?? meta?.previousClose ?? meta?.chartPreviousClose;
+  if (price == null) return null;
+
+  return {
+    symbol: meta?.symbol ?? symbol.toUpperCase(),
+    price,
+    currency: meta?.currency ?? 'USD',
+    timestamp: meta?.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now(),
+  };
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse
@@ -46,12 +94,11 @@ export default async function handler(
       });
     }
 
-    // Validate source parameter (optional, defaults to 'finnhub')
-    const marketSource = (source as string) || 'finnhub';
+    // Validate source parameter (optional, defaults to Yahoo Finance)
+    const marketSource = normalizeSource(source);
 
     // Retrieve API keys from environment variables (never expose in frontend)
     const finnhubKey = process.env.FINNHUB_API_KEY;
-    const binanceKey = process.env.BINANCE_API_KEY;
 
     if (!finnhubKey && marketSource === 'finnhub') {
       console.error('FINNHUB_API_KEY not configured');
@@ -61,20 +108,26 @@ export default async function handler(
       });
     }
 
-    if (!binanceKey && marketSource === 'binance') {
-      console.error('BINANCE_API_KEY not configured');
-      return response.status(500).json({
-        error: 'CONFIGURATION_ERROR',
-        message: 'Market data service is not properly configured',
-      });
-    }
-
     let marketData: MarketData;
 
     // Route to appropriate market API based on source
-    if (marketSource === 'binance') {
+    if (marketSource === 'yahoo') {
+      const quote = await fetchYahooQuote(symbol);
+
+      if (!quote) {
+        return response.status(404).json({
+          error: 'SYMBOL_NOT_FOUND',
+          message: `Symbol ${symbol} not found on Yahoo Finance`,
+        });
+      }
+
+      marketData = quote;
+    } else if (marketSource === 'binance') {
       // Fetch from Binance API
-      const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${symbol.toUpperCase()}USDT`;
+      const normalizedSymbol = symbol.toUpperCase().endsWith('USDT')
+        ? symbol.toUpperCase()
+        : `${symbol.toUpperCase()}USDT`;
+      const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${normalizedSymbol}`;
       const binanceResponse = await fetch(binanceUrl);
 
       if (!binanceResponse.ok) {
@@ -86,7 +139,7 @@ export default async function handler(
 
       const binanceData = await binanceResponse.json();
       marketData = {
-        symbol: symbol.toUpperCase(),
+        symbol: normalizedSymbol,
         price: parseFloat(binanceData.price),
         currency: 'USDT',
         timestamp: Date.now(),

@@ -10,6 +10,8 @@ interface MarketServiceError {
   message: string;
 }
 
+type MarketSource = 'yahoo' | 'finnhub' | 'binance';
+
 class MarketService {
   private baseUrl: string;
 
@@ -23,12 +25,12 @@ class MarketService {
    * API key stays server-side, never exposed to browser.
    *
    * @param symbol - Stock symbol (AAPL, GOOGL) or crypto symbol (BTC, ETH)
-   * @param source - Optional market source: 'finnhub' (stocks) or 'binance' (crypto)
+   * @param source - Optional market source: 'yahoo'/'finnhub' (stocks) or 'binance' (crypto)
    * @returns Market data with current price
    */
   async fetchMarketPrice(
     symbol: string,
-    source: 'finnhub' | 'binance' = 'finnhub',
+    source: MarketSource = 'yahoo',
   ): Promise<MarketServiceResponse> {
     try {
       const params = new URLSearchParams({
@@ -72,7 +74,7 @@ class MarketService {
    */
   async fetchMultiplePrices(
     symbols: string[],
-    source: 'finnhub' | 'binance' = 'finnhub',
+    source: MarketSource = 'yahoo',
   ): Promise<Map<string, MarketServiceResponse>> {
     const results = new Map<string, MarketServiceResponse>();
 
@@ -109,14 +111,14 @@ class MarketService {
   }
 
   /**
-   * Fetch stock price from Finnhub through secure proxy.
-   * API key is kept server-side.
+   * Fetch stock price through the secure serverless proxy.
+   * Yahoo Finance is used by default so no browser-side key is needed.
    *
    * @param symbol - Stock symbol (AAPL, GOOGL, etc.)
    * @returns Market data with USD price
    */
   async fetchStockPrice(symbol: string): Promise<MarketServiceResponse> {
-    return this.fetchMarketPrice(symbol, 'finnhub');
+    return this.fetchMarketPrice(symbol, 'yahoo');
   }
 }
 
@@ -124,4 +126,4 @@ class MarketService {
 export const marketService = new MarketService();
 
 // Export type for convenience
-export type { MarketServiceResponse, MarketServiceError };
+export type { MarketServiceResponse, MarketServiceError, MarketSource };

@@ -136,10 +136,9 @@ async function fetchCryptoPrices(
   return result;
 }
 
-// ── STOCK: Fetch via Yahoo Finance + CORS proxy chain ─────────
-// Uses the 3-proxy fallback chain from api.ts.
-// On any failure the asset is gracefully omitted from the result
-// map, and the main loop will fall back to avg_buy_price.
+// ── STOCK: Fetch via same-origin serverless Yahoo Finance proxy ─────────
+// Yahoo Finance does not provide a supported public browser API. The app calls
+// /api/market server-side so the browser avoids CORS and can fall back cleanly.
 async function fetchStockPrices(
   assets: Asset[],
 ): Promise<Map<string, { priceIdr: Decimal; source: AssetStatus }>> {
@@ -152,17 +151,26 @@ async function fetchStockPrices(
     symbols.map(async (symbol) => {
       const asset = assets.find((a) => a.symbol === symbol)!;
       try {
-        const { fetchViaProxy } = await import('./api');
-        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-        const json = await fetchViaProxy(yahooUrl, 8_000);
+        const params = new URLSearchParams({
+          source: 'yahoo',
+          symbol,
+        });
+        const res = await fetch(`/api/market?${params.toString()}`, {
+          signal: AbortSignal.timeout(8_000),
+          headers: { Accept: 'application/json' },
+        });
 
-        const meta = (json as { chart?: { result?: { meta?: Record<string, unknown> }[] } })
-          ?.chart?.result?.[0]?.meta;
-        const rawPrice = (meta?.regularMarketPrice ?? meta?.previousClose) as number | undefined;
+        if (!res.ok) throw new Error(`Yahoo proxy HTTP ${res.status}`);
+
+        const json = await res.json() as {
+          price?: number;
+          currency?: string;
+        };
+        const rawPrice = json.price;
 
         if (rawPrice == null) throw new Error('No price in response');
 
-        const currency = ((meta?.currency as string | undefined) ?? 'IDR').toUpperCase();
+        const currency = (json.currency ?? asset.currency ?? 'IDR').toUpperCase();
         const priceIdr  = currency === 'IDR'
           ? new Decimal(rawPrice)
           : usdToIdr(rawPrice);

@@ -24,6 +24,7 @@ import type {
 } from '../types/market';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from './useAuthStore';
+import { aggregateMarketData } from '../services/marketAggregator';
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
 
@@ -52,10 +53,55 @@ export const useMarketStore = create<MarketState>()(
 
       // ── syncMarketData (Public Proxies Eradicated) ─────────
       syncMarketData: async () => {
-        // This function previously used high-risk public CORS proxies.
-        // It has been disabled to ensure security and prevent console errors.
-        console.warn('Market sync via public proxies is disabled.');
-        set({ isSyncing: false });
+        const { assets } = get();
+        const user = useAuthStore.getState().user;
+
+        if (assets.length === 0) {
+          set({
+            enrichedAssets: [],
+            isSyncing: false,
+            lastSyncedAt: new Date().toISOString(),
+            syncErrors: [],
+          });
+          return;
+        }
+
+        set({ isSyncing: true, syncErrors: [] });
+
+        try {
+          const result = await aggregateMarketData(assets);
+
+          set({
+            assets: result.assets,
+            enrichedAssets: result.enrichedAssets,
+            lastSyncedAt: result.syncedAt,
+            syncErrors: result.errors,
+            isSyncing: false,
+          });
+
+          if (user) {
+            await Promise.allSettled(
+              result.assets.map((asset) =>
+                supabase
+                  .from('assets')
+                  .update({
+                    live_price: asset.livePrice,
+                    price_source: asset.priceSource,
+                    last_synced_at: asset.lastSyncedAt,
+                  })
+                  .eq('id', asset.id)
+                  .eq('user_id', user.id),
+              ),
+            );
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown market sync error';
+          console.error('Market sync failed:', err);
+          set({
+            isSyncing: false,
+            syncErrors: [message],
+          });
+        }
       },
 
       // ── fetchUserData (Cloud-First Sync) ────────────────────
