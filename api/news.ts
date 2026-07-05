@@ -25,8 +25,8 @@ function timeAgoFrom(date: Date): string {
 
 function sentimentFromTitle(title: string): Sentiment {
   const t = title.toLowerCase();
-  const bullish = ['surge', 'rally', 'breakout', 'beats', 'upgrade', 'record high', 'tops', 'soars', 'bull'];
-  const bearish = ['plunge', 'selloff', 'downgrade', 'misses', 'hacked', 'breach', 'lawsuit', 'crackdown', 'bear'];
+  const bullish = ['surge', 'rally', 'breakout', 'beats', 'upgrade', 'record high', 'tops', 'soars', 'bull', 'gains', 'jump', 'rise', 'climb'];
+  const bearish = ['plunge', 'selloff', 'downgrade', 'misses', 'hacked', 'breach', 'lawsuit', 'crackdown', 'bear', 'drops', 'fall', 'decline', 'slump'];
   if (bullish.some((k) => t.includes(k))) return 'bullish';
   if (bearish.some((k) => t.includes(k))) return 'bearish';
   return 'neutral';
@@ -47,6 +47,70 @@ function decodeHtmlEntities(s: string): string {
 
 function stripCdata(s: string): string {
   return s.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '');
+}
+
+function parseYahooNewsItems(json: any, maxItems = 5): { title: string; pubDate?: string; source: string }[] {
+  const items: { title: string; pubDate?: string; source: string }[] = [];
+  
+  // Yahoo Finance News API returns items in different formats
+  const stories = json?.items || json?.stories || json?.data || [];
+  
+  for (const story of stories.slice(0, maxItems)) {
+    const title = story?.title || story?.headline || '';
+    if (!title) continue;
+    
+    const pubDate = story?.publisher?.time || story?.published_at || story?.timestamp;
+    const source = story?.publisher?.name || story?.source || 'Yahoo Finance';
+    
+    items.push({
+      title: decodeHtmlEntities(title),
+      pubDate: pubDate ? new Date(pubDate * 1000).toISOString() : undefined,
+      source,
+    });
+  }
+  
+  return items;
+}
+
+async function fetchYahooFinanceNews(symbol = 'general'): Promise<{ title: string; pubDate?: string; source: string }[]> {
+  try {
+    // Yahoo Finance uses different endpoints for news
+    // For general financial news, we use the finance.yahoo.com news endpoint
+    const yahooUrls = [
+      `https://query2.finance.yahoo.com/v1/finance/newsstream/${symbol}`,
+      `https://content-api.consumer.yahoofinance.com/api/v1/news?count=10`,
+    ];
+    
+    for (const url of yahooUrls) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            'user-agent': 'Mozilla/5.0 (compatible; OmniWealth/1.0)',
+            accept: 'application/json',
+          },
+        }).finally(() => clearTimeout(timeout));
+        
+        if (response.ok) {
+          const data = await response.json();
+          const items = parseYahooNewsItems(data, 5);
+          if (items.length > 0) {
+            return items;
+          }
+        }
+      } catch {
+        // Try next URL
+        continue;
+      }
+    }
+  } catch {
+    // Fall through to empty array
+  }
+  
+  return [];
 }
 
 function parseRssItems(xml: string, maxItems = 5): { title: string; pubDate?: string; source: string }[] {
@@ -103,6 +167,26 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   try {
+    // First, try to fetch news from Yahoo Finance API
+    const yahooNews = await fetchYahooFinanceNews();
+    
+    if (yahooNews.length > 0) {
+      const out: NewsItem[] = yahooNews.map((it) => {
+        const date = it.pubDate ? new Date(it.pubDate) : new Date();
+        return {
+          id: hashId(`${it.source}:${it.title}:${it.pubDate ?? ''}`),
+          title: it.title,
+          source: it.source,
+          timeAgo: timeAgoFrom(date),
+          sentiment: sentimentFromTitle(it.title),
+        };
+      });
+
+      response.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+      return response.status(200).json(out);
+    }
+
+    // Fallback to RSS feed if Yahoo Finance fails
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3500);
 
