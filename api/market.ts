@@ -7,11 +7,6 @@ interface MarketData {
   timestamp: number;
 }
 
-interface ErrorResponse {
-  error: string;
-  message: string;
-}
-
 type MarketSource = 'yahoo' | 'finnhub' | 'binance';
 
 function normalizeSource(source: unknown): MarketSource {
@@ -19,6 +14,15 @@ function normalizeSource(source: unknown): MarketSource {
     return source;
   }
   return 'yahoo';
+}
+
+/**
+ * Strict ticker whitelist — rejects anything that could alter the upstream
+ * URL structure (query params, paths, fragments) or smuggle SQL-ish payloads.
+ * Legitimate tickers: AAPL, BRK.B, BTC, BTCUSDT, ^JKSE, etc.
+ */
+function isValidSymbol(symbol: string): boolean {
+  return /^[A-Za-z0-9.^_-]{1,15}$/.test(symbol);
 }
 
 async function fetchYahooQuote(symbol: string): Promise<MarketData | null> {
@@ -94,6 +98,15 @@ export default async function handler(
       });
     }
 
+    // Reject malformed symbols BEFORE they reach any upstream URL
+    // (query-parameter/URL injection guard).
+    if (!isValidSymbol(symbol)) {
+      return response.status(400).json({
+        error: 'INVALID_PARAMETER',
+        message: 'symbol must be a valid ticker (1-15 chars: letters, numbers, ".", "_", "-", "^")',
+      });
+    }
+
     // Validate source parameter (optional, defaults to Yahoo Finance)
     const marketSource = normalizeSource(source);
 
@@ -127,7 +140,7 @@ export default async function handler(
       const normalizedSymbol = symbol.toUpperCase().endsWith('USDT')
         ? symbol.toUpperCase()
         : `${symbol.toUpperCase()}USDT`;
-      const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${normalizedSymbol}`;
+      const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${encodeURIComponent(normalizedSymbol)}`;
       const binanceResponse = await fetch(binanceUrl);
 
       if (!binanceResponse.ok) {
@@ -146,7 +159,7 @@ export default async function handler(
       };
     } else {
       // Default to Finnhub API
-      const finnhubUrl = `https://finnhub.io/api/v1/quote?symbol=${symbol.toUpperCase()}&token=${finnhubKey}`;
+      const finnhubUrl = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol.toUpperCase())}&token=${encodeURIComponent(finnhubKey)}`;
       const finnhubResponse = await fetch(finnhubUrl);
 
       if (!finnhubResponse.ok) {

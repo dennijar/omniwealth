@@ -49,26 +49,40 @@ function stripCdata(s: string): string {
   return s.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '');
 }
 
-function parseYahooNewsItems(json: any, maxItems = 5): { title: string; pubDate?: string; source: string }[] {
+function parseYahooNewsItems(json: unknown, maxItems = 5): { title: string; pubDate?: string; source: string }[] {
   const items: { title: string; pubDate?: string; source: string }[] = [];
-  
+
+  const asStr = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const asEpochSec = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+  const asStoryArray = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v)
+      ? v.filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+      : [];
+
   // Yahoo Finance News API returns items in different formats
-  const stories = json?.items || json?.stories || json?.data || [];
-  
+  const root = (typeof json === 'object' && json !== null ? json : {}) as Record<string, unknown>;
+  const stories = asStoryArray(root.items ?? root.stories ?? root.data);
+
   for (const story of stories.slice(0, maxItems)) {
-    const title = story?.title || story?.headline || '';
+    const publisher =
+      typeof story.publisher === 'object' && story.publisher !== null
+        ? (story.publisher as Record<string, unknown>)
+        : {};
+
+    const title = asStr(story.title) || asStr(story.headline);
     if (!title) continue;
-    
-    const pubDate = story?.publisher?.time || story?.published_at || story?.timestamp;
-    const source = story?.publisher?.name || story?.source || 'Yahoo Finance';
-    
+
+    const pubSec = asEpochSec(publisher.time) ?? asEpochSec(story.published_at) ?? asEpochSec(story.timestamp);
+    const source = asStr(publisher.name) || asStr(story.source) || 'Yahoo Finance';
+
     items.push({
       title: decodeHtmlEntities(title),
-      pubDate: pubDate ? new Date(pubDate * 1000).toISOString() : undefined,
+      pubDate: pubSec !== null ? new Date(pubSec * 1000).toISOString() : undefined,
       source,
     });
   }
-  
+
   return items;
 }
 

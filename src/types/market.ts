@@ -7,7 +7,7 @@ export type AssetClass = 'STOCK' | 'CRYPTO' | 'REAL_ESTATE' | 'COMMODITY' | 'MUT
 
 export type AssetStatus = 'live' | 'cached' | 'manual' | 'error';
 
-// ── Raw Asset (mirrors Prisma DB record) ─────────────────────
+// ── Raw Asset (mirrors the Supabase `assets` row) ─────────────
 export interface Asset {
   id: string;
   name: string;

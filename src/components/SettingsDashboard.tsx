@@ -11,7 +11,7 @@ import { useState } from 'react';
 import {
   Moon, Sun, DollarSign, Download, Trash2,
   Info, ChevronRight, Shield, RefreshCw,
-  AlertTriangle, X, Check,
+  AlertTriangle, X, Check, LogOut,
 } from 'lucide-react';
 import { useAppStore, type CurrencySymbol } from '../store/useAppStore';
 
@@ -117,7 +117,8 @@ function ResetConfirmDialog({
           </div>
           <h3 className="text-lg font-black text-slate-900 dark:text-white">Reset Semua Data?</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-            Semua data rekening, transaksi, dan investasi akan <strong>dihapus permanen</strong> dan tidak bisa dipulihkan.
+            Semua rekening, transaksi, budget, dan investasi akan <strong>dihapus permanen dari server</strong>,
+            sesi Anda berakhir, dan Anda akan keluar dari akun. Tindakan ini tidak bisa dibatalkan.
           </p>
         </div>
 
@@ -149,9 +150,12 @@ export function SettingsDashboard() {
   const setCurrency   = useAppStore((s) => s.setCurrency);
   const exportData    = useAppStore((s) => s.exportData);
   const resetAllData  = useAppStore((s) => s.resetAllData);
+  const logout        = useAppStore((s) => s.logout);
 
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [exported,        setExported]        = useState(false);
+  const [isResetting,     setIsResetting]     = useState(false);
+  const [actionError,     setActionError]     = useState<string | null>(null);
 
   const handleExport = () => {
     exportData();
@@ -159,10 +163,25 @@ export function SettingsDashboard() {
     setTimeout(() => setExported(false), 2500);
   };
 
-  const handleReset = () => {
+  const handleLogout = async () => {
+    setActionError(null);
+    try {
+      await logout();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Gagal keluar dari akun.');
+    }
+  };
+
+  const handleReset = async () => {
     setShowResetDialog(false);
-    // Small delay so dialog can close visually
-    setTimeout(() => resetAllData(), 150);
+    setActionError(null);
+    setIsResetting(true);
+    const error = await resetAllData();
+    // On success the page reloads — we only get here on failure.
+    if (error) {
+      setIsResetting(false);
+      setActionError(error);
+    }
   };
 
   return (
@@ -233,6 +252,20 @@ export function SettingsDashboard() {
         </div>
 
         {/* ════════════════════════════════════════════════════
+            SECTION: ACCOUNT
+        ════════════════════════════════════════════════════ */}
+        <SectionHeader title="Akun" />
+        <div className="mx-3 rounded-2xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700/50">
+          <SettingsRow
+            icon={<LogOut size={16} className="text-white" />}
+            iconBg="bg-slate-500"
+            label="Keluar dari Akun"
+            sublabel="Akhiri sesi di perangkat ini"
+            onClick={handleLogout}
+          />
+        </div>
+
+        {/* ════════════════════════════════════════════════════
             SECTION: DANGER ZONE
         ════════════════════════════════════════════════════ */}
         <SectionHeader title="Zona Berbahaya" />
@@ -240,12 +273,24 @@ export function SettingsDashboard() {
           <SettingsRow
             icon={<Trash2 size={16} className="text-white" />}
             iconBg="bg-rose-500"
-            label="Reset Semua Data"
-            sublabel="Hapus semua rekening, transaksi, dan investasi"
+            label={isResetting ? 'Menghapus data di server…' : 'Reset Semua Data'}
+            sublabel={
+              isResetting
+                ? 'Mohon tunggu, jangan tutup aplikasi'
+                : 'Hapus permanen semua rekening, transaksi, budget & investasi'
+            }
             danger
-            onClick={() => setShowResetDialog(true)}
+            onClick={isResetting ? undefined : () => setShowResetDialog(true)}
           />
         </div>
+
+        {/* Error surfaced from logout / reset actions */}
+        {actionError && (
+          <div className="mx-3 mt-3 flex items-start gap-2 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3.5 py-3">
+            <AlertTriangle size={15} className="text-rose-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{actionError}</p>
+          </div>
+        )}
 
         {/* ════════════════════════════════════════════════════
             SECTION: TENTANG APLIKASI

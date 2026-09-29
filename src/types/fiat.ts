@@ -1,6 +1,6 @@
 // ============================================================
 // OmniWealth – Fiat Module Types
-// Mirrors the Prisma schema for client-side usage
+// Client-side types mirroring the Supabase tables (see schema.sql)
 // ============================================================
 
 export type Currency = 'IDR' | 'USD' | 'EUR' | 'SGD' | 'MYR';

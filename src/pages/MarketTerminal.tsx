@@ -4,7 +4,7 @@ import {
   Wifi, WifiOff, Newspaper, TrendingUp, Star,
 } from 'lucide-react';
 import { useBinanceTicker } from '../hooks/useBinanceTicker';
-import { useMarketStore, selectConnectionStatus } from '../stores/useMarketStore';
+import { useLivePriceStore, selectConnectionStatus } from '../store/useLivePriceStore';
 import { MarketNews } from '../components/MarketNews';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ function TerminalCard({
 // ─── Connection Banner ─────────────────────────────────────────────────────────
 
 function ConnectionBanner() {
-  const status = useMarketStore(selectConnectionStatus);
+  const status = useLivePriceStore(selectConnectionStatus);
   if (status === 'connected') return null;
 
   const cfg: Record<string, { label: string; cls: string; Icon: typeof Wifi }> = {
@@ -328,11 +328,11 @@ function TickerStrip({ cryptoRows }: { cryptoRows: Row[] }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export const MarketDashboard: React.FC = () => {
+export const MarketTerminal: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('News');
 
   useBinanceTicker([...CRYPTO_SYMBOLS]);
-  const livePrices = useMarketStore((state) => state.prices);
+  const livePrices = useLivePriceStore((state) => state.prices);
 
   const cryptoRows: Row[] = CRYPTO_DEF.map((def) => {
     const d = livePrices[def.wsKey];
@@ -429,4 +429,4 @@ export const MarketDashboard: React.FC = () => {
   );
 };
 
-export default MarketDashboard;
+export default MarketTerminal;

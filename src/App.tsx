@@ -8,7 +8,7 @@ import { GlobalLoadingScreen } from './components/GlobalLoadingScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { Dashboard } from './pages/Dashboard';
 import { MarketDashboard as InvestDashboard } from './components/MarketDashboard';
-import { MarketDashboard as TerminalDashboard } from './pages/MarketDashboard';
+import { MarketTerminal } from './pages/MarketTerminal';
 import { supabase } from './lib/supabase';
 import { useAuthStore } from './store/useAuthStore';
 import { useFiatStore } from './store/useFiatStore';
@@ -100,7 +100,7 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="fiat" element={<FiatDashboard />} />
           <Route path="invest" element={<InvestDashboard />} />
-          <Route path="markets" element={<TerminalDashboard />} />
+          <Route path="markets" element={<MarketTerminal />} />
           <Route path="insights" element={<InsightsDashboard />} />
           <Route path="settings" element={<SettingsDashboard />} />
         </Route>

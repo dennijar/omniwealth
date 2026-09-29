@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Newspaper, TrendingUp, TrendingDown, Minus, Zap } from 'lucide-react';
-import { useNewsStream } from '../hooks/useNewsStream';
+import { useNewsFeed } from '../hooks/useNewsFeed';
 import type { NewsItemPayload, NewsSentiment, NewsPriority, FlashAlert } from '../hooks/useNewsStream';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,21 +108,25 @@ const NewsCard = React.memo(function NewsCard({ item, isFlashing }: NewsCardProp
         </h3>
       </div>
 
-      {/* Implication */}
-      <div className="px-5 py-4">
-        <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest mb-2">
-          Market Implication
-        </p>
-        <p className="text-xs text-indigo-300/70 leading-relaxed">{item.implication}</p>
-      </div>
+      {/* Implication (only when the source provides commentary) */}
+      {item.implication && (
+        <div className="px-5 py-4">
+          <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest mb-2">
+            Market Implication
+          </p>
+          <p className="text-xs text-indigo-300/70 leading-relaxed">{item.implication}</p>
+        </div>
+      )}
 
-      {/* Watch symbols */}
-      <div className="px-5 pb-4 flex items-center gap-2 flex-wrap">
-        <span className="text-[9px] font-mono text-indigo-700 uppercase tracking-widest">Watch:</span>
-        {item.watchSymbols.map((s) => (
-          <SymbolChip key={s} symbol={s} />
-        ))}
-      </div>
+      {/* Watch symbols (only when the headline mentions any) */}
+      {item.watchSymbols.length > 0 && (
+        <div className={`px-5 pb-4 flex items-center gap-2 flex-wrap ${item.implication ? '' : 'pt-4'}`}>
+          <span className="text-[9px] font-mono text-indigo-700 uppercase tracking-widest">Watch:</span>
+          {item.watchSymbols.map((s) => (
+            <SymbolChip key={s} symbol={s} />
+          ))}
+        </div>
+      )}
     </article>
   );
 },
@@ -183,7 +187,14 @@ class MarketNewsErrorBoundary extends React.Component<
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function MarketNews() {
-  const { feed, flashAlert } = useNewsStream();
+  const { items, flashAlert, mode } = useNewsFeed();
+
+  const subtitle =
+    mode === 'live'
+      ? 'Yahoo Finance & CoinDesk · diperbarui otomatis tiap 5 menit'
+      : mode === 'simulated'
+        ? 'Feed simulasi — konten demo, bukan berita nyata'
+        : 'Menghubungkan ke feed berita…';
 
   return (
     <MarketNewsErrorBoundary>
@@ -198,9 +209,7 @@ export function MarketNews() {
             <h2 className="text-sm font-bold text-indigo-200 tracking-wide">
               Analyst Intelligence Feed
             </h2>
-            <p className="text-[10px] text-indigo-500 font-mono mt-0.5">
-              Event-driven stream · Updates arrive automatically
-            </p>
+            <p className="text-[10px] text-indigo-500 font-mono mt-0.5">{subtitle}</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {flashAlert ? (
@@ -211,7 +220,7 @@ export function MarketNews() {
                 </span>
                 FLASH
               </span>
-            ) : (
+            ) : mode === 'live' ? (
               <span className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-400">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -219,9 +228,17 @@ export function MarketNews() {
                 </span>
                 LIVE
               </span>
+            ) : mode === 'simulated' ? (
+              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md tracking-widest uppercase">
+                SIMULASI
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-indigo-600 tracking-widest uppercase">
+                Memuat…
+              </span>
             )}
             <span className="text-[9px] font-mono text-indigo-700 bg-indigo-950/60 border border-indigo-900/40 px-2 py-1 rounded-lg">
-              {feed.length} items
+              {items.length} items
             </span>
           </div>
         </div>
@@ -231,7 +248,7 @@ export function MarketNews() {
 
         {/* Feed */}
         <div className="flex flex-col gap-4">
-          {feed.map((item) => (
+          {items.map((item) => (
             <NewsCard
               key={item.id}
               item={item}

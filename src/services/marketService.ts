@@ -61,7 +61,7 @@ class MarketService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`Failed to fetch market price for ${symbol}:`, errorMessage);
-      throw new Error(`Market data fetch failed: ${errorMessage}`);
+      throw new Error(`Market data fetch failed: ${errorMessage}`, { cause: error });
     }
   }
 

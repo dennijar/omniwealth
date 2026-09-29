@@ -1,6 +1,6 @@
 import React from 'react';
 import { Activity, Wifi, AlertTriangle, Loader2 } from 'lucide-react';
-import { useMarketStore, selectPriceData, selectConnectionStatus, selectIsConnected, selectPriceCount } from '../stores/useMarketStore';
+import { useLivePriceStore, selectPriceData, selectConnectionStatus, selectIsConnected, selectPriceCount } from '../store/useLivePriceStore';
 
 interface TierConfig {
   id: string;
@@ -62,7 +62,7 @@ function stripUSDT(symbol: string): string {
 }
 
 const TickerRow: React.FC<TickerRowProps> = React.memo(({ symbol, isLast }) => {
-  const data = useMarketStore(selectPriceData(symbol));
+  const data = useLivePriceStore(selectPriceData(symbol));
   let flashBg = "";
   if (data?.flashDirection === "up") flashBg = "bg-emerald-500/10";
   else if (data?.flashDirection === "down") flashBg = "bg-red-500/10";
@@ -241,10 +241,10 @@ const TierCard: React.FC<TierCardProps> = React.memo(({ config }) => {
 TierCard.displayName = "TierCard";
 
 const StatusBar: React.FC = React.memo(() => {
-  const status = useMarketStore(selectConnectionStatus);
-  const isConnected = useMarketStore(selectIsConnected);
-  const priceCount = useMarketStore(selectPriceCount);
-  const errorMessage = useMarketStore((state) => state.connection.errorMessage);
+  const status = useLivePriceStore(selectConnectionStatus);
+  const isConnected = useLivePriceStore(selectIsConnected);
+  const priceCount = useLivePriceStore(selectPriceCount);
+  const errorMessage = useLivePriceStore((state) => state.connection.errorMessage);
 
   const isConnecting = status === 'connecting';
   const isError = status === 'error';

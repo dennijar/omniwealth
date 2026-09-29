@@ -40,7 +40,7 @@ interface MarketState {
   isSymbolWatched: (symbol: string) => boolean;
 }
 
-export const useMarketStore = create<MarketState>()(
+export const useLivePriceStore = create<MarketState>()(
   devtools(
     (set, get) => ({
       prices: {},
@@ -190,7 +190,7 @@ export const useMarketStore = create<MarketState>()(
       getPriceData: (symbol) => get().prices[symbol] ?? null,
       isSymbolWatched: (symbol) => get().watchedSymbols.has(symbol.toUpperCase()),
     }),
-    { name: 'MarketStore' }
+    { name: "LivePriceStore" }
   )
 );
 

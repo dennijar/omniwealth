@@ -1,1 +1,23 @@
-(api/news.ts)
+# ── Dependencies ──
+node_modules/
+
+# ── Environment (never commit real keys) ──
+.env
+.env.*
+!.env.example
+
+# ── Build output ──
+dist/
+dev-dist/
+*.zip
+
+# ── Logs & caches ──
+*.log
+npm-debug.log*
+.vite/
+.cache/
+
+# ── Editors / OS ──
+.DS_Store
+.idea/
+.vscode/
