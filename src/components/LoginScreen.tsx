@@ -20,7 +20,7 @@ export const LoginScreen: React.FC = () => {
   const hasLength = password.length >= 8;
   const hasUpper = /[A-Z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
-  const hasSpecial = /[!@#$%^&*(),.?":{}|<>\-_+=\[\]\\]/.test(password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>\\-_+=[\]\\]/.test(password);
   const isMatch = confirmPassword.length > 0 && password === confirmPassword;
 
   const isValidSignUp = fullName && phoneNumber && email && hasLength && hasUpper && hasNumber && hasSpecial && isMatch;
@@ -69,8 +69,8 @@ export const LoginScreen: React.FC = () => {
         });
         if (signInError) throw signInError;
       }
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed');
+    } catch (err) {
+      setAuthError(err instanceof Error && err.message ? err.message : 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -87,8 +87,8 @@ export const LoginScreen: React.FC = () => {
         }
       });
       if (error) throw error;
-    } catch (err: any) {
-      setAuthError(err.message || 'Google Auth failed');
+    } catch (err) {
+      setAuthError(err instanceof Error && err.message ? err.message : 'Google Auth failed');
       setLoading(false);
     }
   };

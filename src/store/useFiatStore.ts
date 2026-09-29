@@ -20,6 +20,11 @@ import {
 } from '../types/fiat';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from './useAuthStore';
+import {
+  validateBankAccountInput,
+  validateBudgetInput,
+  validateTransactionInput,
+} from '../lib/validate';
 
 // ── Precision config ──────────────────────────────────────────
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
@@ -100,6 +105,12 @@ export const useFiatStore = create<FiatState>()(
         const user = useAuthStore.getState().user;
         if (!user) return null;
 
+        const invalid = validateBankAccountInput(payload);
+        if (invalid) {
+          console.error('Validation failed (bank_accounts):', invalid);
+          return null;
+        }
+
         const colorIndex = get().bankAccounts.length % BANK_COLORS.length;
         const newAccount: BankAccount = {
           id: uuid(),
@@ -128,7 +139,14 @@ export const useFiatStore = create<FiatState>()(
 
       // ── removeBankAccount ───────────────────────────────────
       removeBankAccount: async (id) => {
-        const { error } = await supabase.from('bank_accounts').delete().eq('id', id);
+        const user = useAuthStore.getState().user;
+        if (!user) return;
+        // user_id predicate = defence-in-depth on top of RLS
+        const { error } = await supabase
+          .from('bank_accounts')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
         if (!error) {
           set((state) => ({
             bankAccounts: state.bankAccounts.filter((a) => a.id !== id),
@@ -141,6 +159,9 @@ export const useFiatStore = create<FiatState>()(
       addTransaction: async (payload) => {
         const user = useAuthStore.getState().user;
         if (!user) return { success: false, warning: 'Unauthenticated user.' };
+
+        const invalid = validateTransactionInput(payload);
+        if (invalid) return { success: false, warning: invalid };
 
         const { bankAccounts, getBalanceByBank } = get();
         const account = bankAccounts.find((a) => a.id === payload.bank_account_id);
@@ -204,7 +225,13 @@ export const useFiatStore = create<FiatState>()(
 
       // ── removeTransaction ───────────────────────────────────
       removeTransaction: async (id) => {
-        const { error } = await supabase.from('transactions').delete().eq('id', id);
+        const user = useAuthStore.getState().user;
+        if (!user) return;
+        const { error } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
         if (!error) {
           set((state) => ({ transactions: state.transactions.filter((t) => t.id !== id) }));
         }
@@ -214,6 +241,12 @@ export const useFiatStore = create<FiatState>()(
       upsertBudget: async (payload) => {
         const user = useAuthStore.getState().user;
         if (!user) return null;
+
+        const invalid = validateBudgetInput(payload);
+        if (invalid) {
+          console.error('Validation failed (budgets):', invalid);
+          return null;
+        }
 
         const existing = get().budgets.find(
           (b) => b.month_year === payload.month_year && b.category === payload.category
@@ -259,7 +292,13 @@ export const useFiatStore = create<FiatState>()(
 
       // ── removeBudget ────────────────────────────────────────
       removeBudget: async (id) => {
-        const { error } = await supabase.from('budgets').delete().eq('id', id);
+        const user = useAuthStore.getState().user;
+        if (!user) return;
+        const { error } = await supabase
+          .from('budgets')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
         if (!error) {
           set((state) => ({ budgets: state.budgets.filter((b) => b.id !== id) }));
         }

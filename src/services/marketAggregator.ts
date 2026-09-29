@@ -3,9 +3,9 @@
 // Simulates the backend /api/market-data/sync route logic
 // running entirely client-side (Vite SPA architecture).
 //
-// Architecture mirrors the Next.js API route:
+// Pipeline:
 //   1. Separate assets by class
-//   2. Fetch live prices (STOCK → Yahoo Finance proxy / mock,
+//   2. Fetch live prices (STOCK → /api/market serverless proxy,
 //      CRYPTO → CoinGecko public API)
 //   3. REAL_ESTATE → strict manual_valuation
 //   4. Build enriched asset with Decimal.js precision
@@ -13,6 +13,7 @@
 // ============================================================
 
 import Decimal from 'decimal.js';
+import { USD_TO_IDR_FALLBACK } from './api';
 import type {
   Asset,
   AssetClass,
@@ -42,8 +43,7 @@ const COINGECKO_ID_MAP: Record<string, string> = {
   ATOM: 'cosmos',
 };
 
-// ── IDR Exchange Rate (fallback static) ──────────────────────
-const USD_TO_IDR_FALLBACK = 15_850;
+// ── IDR Exchange Rate — shared fallback constant (services/api.ts) ──
 
 // ── USD → IDR Decimal-precise converter ──────────────────────
 function usdToIdr(usdPrice: number, rate: number = USD_TO_IDR_FALLBACK): Decimal {

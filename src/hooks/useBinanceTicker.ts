@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useMarketStore } from '../stores/useMarketStore';
+import { useLivePriceStore } from '../store/useLivePriceStore';
 
 interface RawBinanceTicker {
   s: string; // symbol
@@ -30,9 +30,9 @@ export function useBinanceTicker(symbols: string[]) {
   const symbolsRef         = useRef<Set<string>>(new Set());
 
   // Stable store-action references — safe to read outside render
-  const updatePrices       = useMarketStore.getState().updatePrices;
-  const clearFlash         = useMarketStore.getState().clearFlash;
-  const setConnectionStatus = useMarketStore.getState().setConnectionStatus;
+  const updatePrices       = useLivePriceStore.getState().updatePrices;
+  const clearFlash         = useLivePriceStore.getState().clearFlash;
+  const setConnectionStatus = useLivePriceStore.getState().setConnectionStatus;
 
   // Keep symbolsRef in sync with the caller's array
   useEffect(() => {
@@ -95,7 +95,7 @@ export function useBinanceTicker(symbols: string[]) {
           price:           currentPrice,
           prevPrice:       previousPrice,
           // `P` from Binance is the 24-h percent string, e.g. "2.45" => 2.45 (%)
-          change24h:       parseFloat(raw.P),
+          change24h:       parseFloat(raw.p),
           changePercent24h: parseFloat(raw.P),
           volume24h:       parseFloat(raw.v),
           high24h:         parseFloat(raw.h),
@@ -157,7 +157,6 @@ export function useBinanceTicker(symbols: string[]) {
           ws.close();
           return;
         }
-        console.log('[BINANCE-WS] Connected');
         setConnectionStatus({
           status:           'connected',
           lastConnected:    Date.now(),
@@ -180,18 +179,16 @@ export function useBinanceTicker(symbols: string[]) {
         setConnectionStatus({ status: 'error', errorMessage: 'WebSocket error' });
       };
 
-      ws.onclose = (ev) => {
+      ws.onclose = () => {
         if (!mountedRef.current) return;
 
-        console.log(`[BINANCE-WS] Closed (code ${ev.code}, clean: ${ev.wasClean})`);
         connectedRef.current = false; // allow reconnect
 
-        const currentAttempt = useMarketStore.getState().connection.reconnectAttempt;
+        const currentAttempt = useLivePriceStore.getState().connection.reconnectAttempt;
         const nextAttempt    = currentAttempt + 1;
 
         if (nextAttempt <= RECONNECT_MAX_ATTEMPTS) {
           const delay = getReconnectDelay(currentAttempt);
-          console.log(`[BINANCE-WS] Reconnecting in ${Math.round(delay)}ms (attempt ${nextAttempt})`);
 
           setConnectionStatus({
             status:           'disconnected',

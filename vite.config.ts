@@ -10,6 +10,12 @@ const __dirname = path.dirname(__filename);
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    // Allow the Arena/Vercel-style preview hostnames in dev (Vite ≥7 blocks
+    // unknown hosts by default). Never enable this in production builds.
+    allowedHosts: true,
+  },
   plugins: [
     react(),
     tailwindcss(),

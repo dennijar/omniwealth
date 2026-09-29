@@ -33,15 +33,9 @@ try {
 
 const updateSW = import.meta.env.PROD ? registerSW({
   onNeedRefresh() {
-    console.info("[PWA] New content available — updating…");
     updateSW(true);
   },
-  onOfflineReady() {
-    console.info("[PWA] App is ready to work offline.");
-  },
-  onRegisteredSW(swUrl: string, registration: ServiceWorkerRegistration | undefined) {
-    console.info(`[PWA] Service Worker registered at: ${swUrl}`, registration);
-  },
+
   onRegisterError(error: unknown) {
     console.error("[PWA] Service Worker registration failed:", error);
   },
@@ -54,6 +48,4 @@ createRoot(document.getElementById("root")!).render(
     <AppRouter />
   </StrictMode>
 );
-
-// trigger vercel redeploy for env variables
 

@@ -15,6 +15,7 @@ import Decimal from 'decimal.js';
 
 import type {
   Asset,
+  AssetStatus,
   EnrichedAsset,
   AssetClass,
   ClassSummary,
@@ -24,6 +25,7 @@ import type {
 } from '../types/market';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from './useAuthStore';
+import { validateAssetInput, isValidBalance } from '../lib/validate';
 import { aggregateMarketData } from '../services/marketAggregator';
 
 Decimal.set({ precision: 28, rounding: Decimal.ROUND_HALF_UP });
@@ -124,7 +126,7 @@ export const useMarketStore = create<MarketState>()(
               sector: dbA.sector,
               logo_url: dbA.logo_url,
               livePrice: dbA.live_price ? Number(dbA.live_price) : Number(dbA.average_buy_price),
-              priceSource: dbA.price_source as any,
+              priceSource: dbA.price_source as AssetStatus,
               lastSyncedAt: dbA.last_synced_at,
               created_at: dbA.created_at,
             }));
@@ -141,6 +143,12 @@ export const useMarketStore = create<MarketState>()(
       addAsset: async (payload: CreateAssetPayload): Promise<Asset | null> => {
         const user = useAuthStore.getState().user;
         if (!user) return null;
+
+        const invalid = validateAssetInput(payload);
+        if (invalid) {
+          console.error('Validation failed (assets):', invalid);
+          return null;
+        }
 
         const { assets } = get();
 
@@ -169,7 +177,7 @@ export const useMarketStore = create<MarketState>()(
             const { error: patchErr } = await supabase.from('assets').update({
               quantity: newQty.toFixed(8),
               average_buy_price: newAvgPrice.toFixed(2),
-            }).eq('id', existing.id);
+            }).eq('id', existing.id).eq('user_id', user.id);
 
             if (patchErr) {
               console.error('Supabase patch error (VWAP Accumulation):', patchErr);
@@ -236,7 +244,13 @@ export const useMarketStore = create<MarketState>()(
 
       // ── removeAsset ───────────────────────────────────────
       removeAsset: async (id: string) => {
-        const { error } = await supabase.from('assets').delete().eq('id', id);
+        const user = useAuthStore.getState().user;
+        if (!user) return;
+        const { error } = await supabase
+          .from('assets')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
         if (!error) {
           set((state) => ({
             assets:         state.assets.filter((a) => a.id !== id),
@@ -247,11 +261,17 @@ export const useMarketStore = create<MarketState>()(
 
       // ── updateManualValuation ─────────────────────────────
       updateManualValuation: async (id: string, value: number) => {
+        if (!isValidBalance(value)) {
+          console.error('Validation failed (assets.manual_valuation): value must be ≥ 0');
+          return;
+        }
+        const user = useAuthStore.getState().user;
+        if (!user) return;
         const { error } = await supabase.from('assets').update({
           manual_valuation: new Decimal(value).toFixed(2),
           live_price: value,
           price_source: 'manual'
-        }).eq('id', id);
+        }).eq('id', id).eq('user_id', user.id);
 
         if (!error) {
           set((state) => ({

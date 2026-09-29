@@ -189,7 +189,7 @@ export function InsightsDashboard() {
   // ── Initial load & auto-refresh every 90s ────────────────────
   useEffect(() => {
     getFinancialInsights();
-  }, []);
+  }, [getFinancialInsights]);
 
   const handleRefresh = useCallback(() => {
     computeInsights();
